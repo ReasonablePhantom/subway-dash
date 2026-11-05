@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Tracks -->
+    <path
+        android:fillColor="#FFFFD700"
+        android:pathData="M48,40 L60,40 L68,90 L40,90 Z" />
+    <!-- Running Figure Silhouette -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,26 A6,6 0 1,0 54,14 A6,6 0 1,0 54,26 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M50,28 L58,28 L62,50 L56,50 L53,38 L50,56 L44,56 L47,34 Z" />
+</vector>

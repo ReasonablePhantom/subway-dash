@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Subway Dash - 极速跑酷</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #060810;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      touch-action: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #gameContainer {
+      position: relative;
+      width: 100%;
+      max-width: 480px;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      box-shadow: 0 0 60px rgba(0,0,0,0.95);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+    /* In-game HUD */
+    .hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: max(16px, env(safe-area-inset-top)) 18px 10px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      font-weight: 900;
+      z-index: 10;
+    }
+    .hud-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .hud-score {
+      font-size: 28px;
+      color: #fff;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8), 0 0 16px rgba(255,120,0,0.6);
+      letter-spacing: 1px;
+    }
+    .hud-speed-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      background: rgba(0, 180, 216, 0.4);
+      border: 1px solid rgba(0, 210, 255, 0.8);
+      padding: 3px 10px;
+      border-radius: 12px;
+      color: #e0f2fe;
+      width: fit-content;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      transition: background 0.3s, color 0.3s, transform 0.2s;
+    }
+    .hud-speed-badge.boost {
+      background: rgba(255, 0, 80, 0.65);
+      border-color: #ff3366;
+      color: #fff;
+      transform: scale(1.08);
+    }
+    .hud-coins {
+      font-size: 22px;
+      color: #ffd700;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 6px 16px;
+      border-radius: 24px;
+      border: 1.5px solid rgba(255,215,0,0.6);
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    }
+    /* Speed Up Center Banner */
+    .speedup-banner {
+      position: absolute;
+      top: 25%;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 900;
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      pointer-events: none;
+      z-index: 12;
+      opacity: 0;
+      transform: scale(0.6);
+      transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      text-shadow: 0 0 20px rgba(255, 60, 0, 0.9), 0 4px 10px rgba(0,0,0,0.8);
+    }
+    .speedup-banner.show {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+
+    /* Touch Screen Virtual Controller */
+    .touch-controls {
+      position: absolute;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 0 16px;
+      z-index: 15;
+      pointer-events: none;
+    }
+    .touch-btn {
+      pointer-events: auto;
+      width: 72px;
+      height: 72px;
+      background: rgba(255, 255, 255, 0.22);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-radius: 50%;
+      color: white;
+      font-size: 26px;
+      font-weight: 900;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+      transition: transform 0.08s ease, background 0.08s ease;
+    }
+    .touch-btn span {
+      font-size: 11px;
+      margin-top: 2px;
+      opacity: 0.85;
+      font-weight: 700;
+    }
+    .touch-btn:active, .touch-btn.active {
+      transform: scale(0.88);
+      background: rgba(255, 170, 0, 0.65);
+      border-color: #ffd700;
+    }
+
+    /* Overlays */
+    .overlay-screen {
+      position: absolute;
+      inset: 0;
+      background: rgba(6, 9, 18, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 20;
+      text-align: center;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .overlay-title {
+      font-size: 34px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #ffcc00, #ff4400);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      filter: drop-shadow(0 4px 14px rgba(255,80,0,0.6));
+    }
+    .overlay-subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+    .stats-card {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 16px;
+      padding: 12px 22px;
+      width: 100%;
+      max-width: 320px;
+      margin-bottom: 14px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 6px 0;
+      font-size: 15px;
+    }
+    .stat-label { color: #94a3b8; }
+    .stat-val { font-weight: 800; color: #fff; }
+
+    /* Upload Record Card to brucelyu.cc */
+    .upload-card {
+      background: rgba(255, 140, 0, 0.08);
+      border: 1.5px solid rgba(255, 150, 0, 0.35);
+      border-radius: 16px;
+      padding: 14px 18px;
+      width: 100%;
+      max-width: 320px;
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .upload-header {
+      font-size: 13px;
+      font-weight: 800;
+      color: #ffbe76;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .upload-input-group {
+      margin-bottom: 8px;
+    }
+    .upload-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .upload-input:focus {
+      border-color: #ffa502;
+    }
+    .upload-datetime-info {
+      font-size: 11px;
+      color: #94a3b8;
+      font-family: monospace;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .upload-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #ff9f43, #ee5253);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .upload-btn:active {
+      transform: scale(0.96);
+    }
+    .upload-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .upload-status {
+      font-size: 12px;
+      margin-top: 8px;
+      text-align: center;
+      min-height: 18px;
+      font-weight: bold;
+    }
+    .upload-status.success { color: #2ed573; }
+    .upload-status.error { color: #ff4757; }
+    .upload-status.loading { color: #70a1ff; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      max-width: 320px;
+    }
+    .play-btn {
+      flex: 1;
+      background: linear-gradient(135deg, #ff9900, #ff3300);
+      color: white;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 28px;
+      font-size: 18px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(255,70,0,0.55);
+      transition: transform 0.1s ease;
+      letter-spacing: 1px;
+    }
+    .play-btn:active {
+      transform: scale(0.94);
+    }
+    .leaderboard-link-btn {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff;
+      padding: 14px 16px;
+      border-radius: 28px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+    .leaderboard-link-btn:active {
+      background: rgba(255,255,255,0.22);
+    }
+    .control-guide {
+      margin-top: 18px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Top In-game HUD -->
+    <div class="hud" id="hud" style="display: none;">
+      <div class="hud-left">
+        <div class="hud-score" id="scoreDisplay">0m</div>
+        <div class="hud-speed-badge" id="speedBadge">⚡ 1.0x 巡航</div>
+      </div>
+      <div class="hud-coins" id="coinsDisplay">🪙 0</div>
+    </div>
+
+    <!-- Center Banner for Speed Up alerts -->
+    <div class="speedup-banner" id="speedupBanner">🔥 SPEED UP! 速度提升!</div>
+
+    <!-- On-screen Large Touch Buttons for Mobile -->
+    <div class="touch-controls" id="touchControls" style="display: none;">
+      <div class="touch-btn" id="btnLeft">◀<span>左道</span></div>
+      <div class="touch-btn" id="btnJump">▲<span>跳跃</span></div>
+      <div class="touch-btn" id="btnSlide">▼<span>滑铲</span></div>
+      <div class="touch-btn" id="btnRight">▶<span>右道</span></div>
+    </div>
+
+    <!-- Start Screen Overlay -->
+    <div class="overlay-screen" id="startScreen">
+      <div class="overlay-title">Subway Dash</div>
+      <div class="overlay-subtitle">地铁极速跑酷 · 渐进加速版</div>
+      <button class="play-btn" id="startBtn" style="width: auto; padding: 16px 48px;">开始奔跑</button>
+      <div class="control-guide">
+        ⚡ <b>动态渐进加速</b><br>
+        平稳起步，跑得越远速度越快！<br>
+        📱 触屏：<b>任意位置滑动</b> 或 点击下方 <b>4个大虚拟按键</b><br>
+        💻 电脑：A/D 或 ←/→ 变道，W/空格 跳跃，S/↓ 滑铲
+      </div>
+    </div>
+
+    <!-- Game Over Screen Overlay -->
+    <div class="overlay-screen" id="gameOverScreen" style="display: none;">
+      <div class="overlay-title" style="background: linear-gradient(135deg, #ff4444, #ff8800); -webkit-background-clip: text;">撞到啦!</div>
+      <div class="overlay-subtitle">速度越来越快，休息一下再来一次！</div>
+      
+      <!-- Stats Card -->
+      <div class="stats-card">
+        <div class="stat-row">
+          <span class="stat-label">本次得分</span>
+          <span class="stat-val" id="finalScore">0m</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">极速倍率</span>
+          <span class="stat-val" id="finalSpeed" style="color: #ffaa00;">1.0x</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">本次金币</span>
+          <span class="stat-val" id="finalCoins" style="color: #ffd700;">🪙 0</span>
+        </div>
+        <div class="stat-row" style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px; margin-top: 6px;">
+          <span class="stat-label">历史最高</span>
+          <span class="stat-val" id="bestScore" style="color: #4ade80;">0m</span>
+        </div>
+      </div>
+
+      <!-- Upload Record Card to brucelyu.cc -->
+      <div class="upload-card" id="uploadCard">
+        <div class="upload-header">
+          <span>🏆 上传战绩到 brucelyu.cc 全球排行榜</span>
+        </div>
+        <div class="upload-input-group">
+          <input
+            type="text"
+            id="playerNameInput"
+            class="upload-input"
+            placeholder="输入玩家昵称 (如: Bruce)"
+            maxlength="20"
+          />
+        </div>
+        <div class="upload-datetime-info">
+          <span>🕒 日期时间:</span>
+          <span id="recordDateTimeDisplay">2026-11-05 14:35:20</span>
+        </div>
+        <button class="upload-btn" id="uploadBtn">
+          <span>🚀 确认上传到 brucelyu.cc</span>
+        </button>
+        <div class="upload-status" id="uploadStatus"></div>
+      </div>
+
+      <!-- Bottom Button Row -->
+      <div class="btn-row">
+        <button class="play-btn" id="restartBtn">再跑一次</button>
+        <a
+          href="https://www.brucelyu.cc/subway-dash"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="leaderboard-link-btn"
+          id="viewLeaderboardLink"
+        >
+          <span>📊 查看榜单</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Procedural Sound Synthesizer
+class SoundManager {
+  constructor() {
+    this.ctx = null;
+  }
+  init() {
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.ctx = new AudioCtx();
+    }
+  }
+  playCoin() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(987.77, now);
+      osc.frequency.setValueAtTime(1318.51, now + 0.06);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } catch(_) {}
+  }
+  playJump() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(240, now);
+      osc.frequency.exponentialRampToValueAtTime(540, now + 0.16);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.16);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } catch(_) {}
+  }
+  playSlide() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(280, now);
+      osc.frequency.exponentialRampToValueAtTime(100, now + 0.18);
+      gain.gain.setValueAtTime(0.16, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.18);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch(_) {}
+  }
+  playCrash() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(110, now);
+      osc.frequency.linearRampToValueAtTime(30, now + 0.3);
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } catch(_) {}
+  }
+  playSpeedUp() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(350, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.3);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } catch(_) {}
+  }
+}
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const sound = new SoundManager();
+
+// Game State
+let gameState = 'START';
+let score = 0;
+let coins = 0;
+let bestScore = parseInt(localStorage.getItem('subway_best_score') || '0', 10);
+
+// Progressive Acceleration
+const BASE_SPEED = 5.2;
+const MAX_SPEED = 16.5;
+let gameSpeed = BASE_SPEED;
+let speedTier = 1;
+let distance = 0;
+let lastTimestamp = 0;
+
+// High-speed wind lines
+const speedLines = [];
+for (let i = 0; i < 24; i++) {
+  speedLines.push({
+    angle: Math.random() * Math.PI * 2,
+    dist: Math.random() * 400 + 40,
+    len: Math.random() * 40 + 20,
+    speed: Math.random() * 8 + 12
+  });
+}
+
+// Screen & 3D Camera Setup
+let width = 0;
+let height = 0;
+let horizonY = 0;
+let groundY = 0;
+let fov = 350;
+let laneSpacing = 160;
+
+// Player configuration
+const player = {
+  lane: 0,
+  targetLane: 0,
+  currentX: 0,
+  y: 0,
+  vy: 0,
+  state: 'RUNNING', // RUNNING, JUMPING, SLIDING
+  slideTimer: 0,
+  animTime: 0
+};
+
+// World Entities
+let obstacles = [];
+let worldCoins = [];
+let particles = [];
+let nextSpawnZ = 450;
+let trackOffset = 0;
+
+// Last record info for uploading
+let lastRunDate = '';
+let lastRunTime = '';
+let lastRunTimestamp = '';
+
+function resizeCanvas() {
+  const container = document.getElementById('gameContainer');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  width = container.clientWidth;
+  height = container.clientHeight;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  ctx.resetTransform();
+  ctx.scale(dpr, dpr);
+
+  horizonY = height * 0.36;
+  groundY = height * 0.86;
+  fov = height * 0.44;
+  laneSpacing = width * 0.34;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function startGame() {
+  sound.init();
+  gameState = 'PLAYING';
+  score = 0;
+  coins = 0;
+  distance = 0;
+  gameSpeed = BASE_SPEED;
+  speedTier = 1;
+  obstacles = [];
+  worldCoins = [];
+  particles = [];
+  nextSpawnZ = 420;
+
+  player.lane = 0;
+  player.targetLane = 0;
+  player.currentX = 0;
+  player.y = 0;
+  player.vy = 0;
+  player.state = 'RUNNING';
+  player.slideTimer = 0;
+  lastTimestamp = 0;
+
+  // Pre-spawn first waves immediately so tracks are never empty!
+  spawnWaveAt(450);
+  spawnWaveAt(850);
+  nextSpawnZ = 1250;
+
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('touchControls').style.display = 'flex';
+  updateSpeedBadge();
+}
+
+function showSpeedUpBanner(text) {
+  sound.playSpeedUp();
+  const banner = document.getElementById('speedupBanner');
+  banner.textContent = text;
+  banner.classList.add('show');
+  const badge = document.getElementById('speedBadge');
+  badge.classList.add('boost');
+  setTimeout(() => {
+    banner.classList.remove('show');
+    badge.classList.remove('boost');
+  }, 1200);
+}
+
+function updateSpeedBadge() {
+  const badge = document.getElementById('speedBadge');
+  if (isNaN(gameSpeed)) gameSpeed = BASE_SPEED;
+  const multiplier = (gameSpeed / BASE_SPEED).toFixed(1);
+  if (multiplier < 1.3) {
+    badge.innerHTML = `⚡ ${multiplier}x 舒适巡航`;
+    badge.style.background = 'rgba(0, 180, 216, 0.4)';
+    badge.style.borderColor = 'rgba(0, 210, 255, 0.8)';
+  } else if (multiplier < 1.8) {
+    badge.innerHTML = `⚡ ${multiplier}x 疾速起飞`;
+    badge.style.background = 'rgba(255, 140, 0, 0.45)';
+    badge.style.borderColor = 'rgba(255, 170, 0, 0.9)';
+  } else if (multiplier < 2.4) {
+    badge.innerHTML = `🔥 ${multiplier}x 极速狂飙!`;
+    badge.style.background = 'rgba(230, 57, 70, 0.55)';
+    badge.style.borderColor = '#ff3366';
+  } else {
+    badge.innerHTML = `🚀 ${multiplier}x 超光速极限!`;
+    badge.style.background = 'rgba(168, 85, 247, 0.65)';
+    badge.style.borderColor = '#c084fc';
+  }
+}
+
+function gameOver() {
+  gameState = 'GAMEOVER';
+  sound.playCrash();
+  if (isNaN(score)) score = 0;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('subway_best_score', bestScore.toString());
+  }
+
+  const multiplier = (gameSpeed / BASE_SPEED).toFixed(1);
+  document.getElementById('finalScore').textContent = `${score}m`;
+  document.getElementById('finalSpeed').textContent = `${multiplier}x 极速`;
+  document.getElementById('finalCoins').textContent = `🪙 ${coins}`;
+  document.getElementById('bestScore').textContent = `${bestScore}m`;
+
+  // Auto-fill Current Date and Time for Upload
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+
+  lastRunDate = `${year}-${month}-${day}`;
+  lastRunTime = `${hours}:${minutes}:${seconds}`;
+  lastRunTimestamp = now.toISOString();
+
+  document.getElementById('recordDateTimeDisplay').textContent = `${lastRunDate} ${lastRunTime}`;
+
+  // Restore saved player name or set default
+  const savedName = localStorage.getItem('subway_player_name') || '';
+  const nameInput = document.getElementById('playerNameInput');
+  nameInput.value = savedName;
+
+  // Reset upload button and status
+  const uploadBtn = document.getElementById('uploadBtn');
+  uploadBtn.disabled = false;
+  uploadBtn.innerHTML = '<span>🚀 确认上传到 brucelyu.cc</span>';
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.className = 'upload-status';
+  statusEl.textContent = '';
+
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('touchControls').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'flex';
+}
+
+// Upload record to brucelyu.cc
+async function uploadRecordToBruceLyu() {
+  const nameInput = document.getElementById('playerNameInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const statusEl = document.getElementById('uploadStatus');
+
+  const playerName = nameInput.value.trim() || '神秘跑酷手';
+  localStorage.setItem('subway_player_name', playerName);
+
+  uploadBtn.disabled = true;
+  uploadBtn.innerHTML = '<span>⏳ 正在上传中...</span>';
+  statusEl.className = 'upload-status loading';
+  statusEl.textContent = '正在将战绩同步至 brucelyu.cc...';
+
+  const multiplier = parseFloat((gameSpeed / BASE_SPEED).toFixed(1));
+
+  const payload = {
+    playerName: playerName,
+    score: score,
+    coins: coins,
+    speedMultiplier: multiplier,
+    gameDate: lastRunDate,
+    gameTime: lastRunTime,
+    playedAt: lastRunTimestamp,
+  };
+
+  // Determine API endpoint
+  let endpoints = [
+    'https://www.brucelyu.cc/api/subway-dash/records',
+    'https://brucelyu.cc/api/subway-dash/records'
+  ];
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    endpoints.unshift('http://localhost:3000/api/subway-dash/records');
+  }
+
+  let success = false;
+  let responseData = null;
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        responseData = await res.json();
+        success = true;
+        break;
+      }
+    } catch (_) {
+      // Try next endpoint
+    }
+  }
+
+  if (success) {
+    statusEl.className = 'upload-status success';
+    statusEl.innerHTML = '🎉 战绩上传成功！已登入全球英雄榜！';
+    uploadBtn.innerHTML = '<span>✅ 已上传</span>';
+  } else {
+    // If offline, save to local backup
+    const localBackups = JSON.parse(localStorage.getItem('subway_offline_records') || '[]');
+    localBackups.push(payload);
+    localStorage.setItem('subway_offline_records', JSON.stringify(localBackups));
+
+    statusEl.className = 'upload-status error';
+    statusEl.textContent = '⚠️ 网络连接稍慢，已保存在本地，可点击榜单查看';
+    uploadBtn.disabled = false;
+    uploadBtn.innerHTML = '<span>🔄 重新尝试上传</span>';
+  }
+}
+
+document.getElementById('uploadBtn').addEventListener('click', uploadRecordToBruceLyu);
+
+function project(laneOffset, yOffset, z) {
+  if (isNaN(laneOffset)) laneOffset = 0;
+  if (isNaN(yOffset)) yOffset = 0;
+  if (isNaN(z)) z = 0;
+  if (z <= -fov) z = -fov + 0.1;
+  const scale = fov / (fov + z);
+  const cx = width / 2;
+  const px = cx + (laneOffset * laneSpacing) * scale;
+  const py = horizonY + (groundY - horizonY) * scale - (yOffset * scale);
+  return { x: px, y: py, scale: scale };
+}
+
+// Spawning wave helper
+function spawnWaveAt(zPos) {
+  const lanes = [-1, 0, 1];
+  const numObstacles = Math.random() < 0.4 ? 2 : 1;
+  const shuffledLanes = [...lanes].sort(() => Math.random() - 0.5);
+  const obstacleTypes = ['HURDLE', 'HIGH_BARRIER', 'TRAIN'];
+
+  for (let i = 0; i < numObstacles; i++) {
+    const lane = shuffledLanes[i];
+    const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+    obstacles.push({
+      lane: lane,
+      z: zPos,
+      type: type
+    });
+  }
+
+  const safeLane = shuffledLanes[numObstacles];
+  const coinCount = Math.floor(Math.random() * 4) + 3;
+  for (let c = 0; c < coinCount; c++) {
+    worldCoins.push({
+      lane: safeLane,
+      z: zPos + c * 38,
+      y: 18,
+      collected: false
+    });
+  }
+}
+
+function spawnChunk() {
+  spawnWaveAt(nextSpawnZ);
+  const reactionDist = Math.max(380, gameSpeed * 44);
+  nextSpawnZ += reactionDist + Math.random() * 100;
+}
+
+// --- Player Controls ---
+function moveLeft() {
+  if (gameState !== 'PLAYING') return;
+  if (player.targetLane > -1) player.targetLane--;
+}
+function moveRight() {
+  if (gameState !== 'PLAYING') return;
+  if (player.targetLane < 1) player.targetLane++;
+}
+
+// Jump: Can jump from ground or cancel a ground slide into a jump
+function jump() {
+  if (gameState !== 'PLAYING') return;
+  if (player.y === 0) {
+    player.state = 'JUMPING';
+    player.vy = 12.0;
+    player.slideTimer = 0;
+    sound.playJump();
+  }
+}
+
+// Slide: If in mid-air, fast-slam down to ground immediately!
+function slide() {
+  if (gameState !== 'PLAYING') return;
+  if (player.y > 0) {
+    // Fast downward velocity to slam back to ground cleanly!
+    player.vy = -24;
+  }
+  player.state = 'SLIDING';
+  player.slideTimer = 36;
+  sound.playSlide();
+}
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (gameState === 'START' && (e.key === ' ' || e.key === 'Enter')) { startGame(); return; }
+  if (gameState === 'GAMEOVER' && e.target && e.target.tagName === 'INPUT') return; // Don't intercept input typing!
+  if (gameState === 'GAMEOVER' && (e.key === ' ' || e.key === 'Enter')) { startGame(); return; }
+
+  switch(e.key.toLowerCase()) {
+    case 'arrowleft': case 'a': moveLeft(); break;
+    case 'arrowright': case 'd': moveRight(); break;
+    case 'arrowup': case 'w': case ' ': jump(); break;
+    case 'arrowdown': case 's': slide(); break;
+  }
+});
+
+// Instant Touch-Move Gesture
+let touchOriginX = 0;
+let touchOriginY = 0;
+let touchActive = false;
+const SWIPE_THRESHOLD = 20;
+
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length > 0) {
+    touchOriginX = e.touches[0].clientX;
+    touchOriginY = e.touches[0].clientY;
+    touchActive = true;
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (!touchActive || gameState !== 'PLAYING' || e.touches.length === 0) return;
+  const curX = e.touches[0].clientX;
+  const curY = e.touches[0].clientY;
+  const dx = curX - touchOriginX;
+  const dy = curY - touchOriginY;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+
+  if (Math.max(absDx, absDy) >= SWIPE_THRESHOLD) {
+    if (absDx > absDy) {
+      if (dx > 0) moveRight(); else moveLeft();
+    } else {
+      if (dy > 0) slide(); else jump();
+    }
+    touchOriginX = curX;
+    touchOriginY = curY;
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
+
+canvas.addEventListener('click', (e) => {
+  if (gameState === 'START') { startGame(); return; }
+  if (gameState === 'GAMEOVER') return; // Click handled by UI overlay
+  const rect = canvas.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
+
+  if (clickY < rect.height * 0.45) jump();
+  else if (clickX < rect.width * 0.33) moveLeft();
+  else if (clickX > rect.width * 0.66) moveRight();
+  else slide();
+});
+
+function bindTouchButton(id, action) {
+  const btn = document.getElementById(id);
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    action();
+    btn.classList.add('active');
+    setTimeout(() => btn.classList.remove('active'), 120);
+  });
+}
+bindTouchButton('btnLeft', moveLeft);
+bindTouchButton('btnRight', moveRight);
+bindTouchButton('btnJump', jump);
+bindTouchButton('btnSlide', slide);
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// --- Robust Progressive Physics Update ---
+function update(dt) {
+  if (gameState !== 'PLAYING') return;
+
+  // Ensure distance is valid number >= 0
+  if (isNaN(distance) || distance < 0) distance = 0;
+
+  // Progressive Speed Curve: Starts at 5.2, scales smoothly to 16.5
+  const progressBoost = Math.pow(distance / 70, 0.66) * 1.35;
+  gameSpeed = Math.min(BASE_SPEED + progressBoost, MAX_SPEED);
+  if (isNaN(gameSpeed)) gameSpeed = BASE_SPEED;
+
+  const stepMovement = gameSpeed * dt;
+  distance += stepMovement * 0.055;
+  score = Math.floor(distance);
+  trackOffset = (trackOffset + stepMovement) % 60;
+
+  // Speed Tiers checking
+  const newTier = gameSpeed < 7.5 ? 1 : gameSpeed < 10.5 ? 2 : gameSpeed < 13.5 ? 3 : 4;
+  if (newTier > speedTier) {
+    speedTier = newTier;
+    if (speedTier === 2) showSpeedUpBanner('⚡ 提速! 进入疾速阶段 ⚡');
+    else if (speedTier === 3) showSpeedUpBanner('🔥 极速狂飙! 神经紧绷 🔥');
+    else if (speedTier === 4) showSpeedUpBanner('🚀 超光速极限冲刺! 🚀');
+  }
+
+  document.getElementById('scoreDisplay').textContent = `${score}m`;
+  document.getElementById('coinsDisplay').textContent = `🪙 ${coins}`;
+  updateSpeedBadge();
+
+  // Smooth lane interpolation
+  if (isNaN(player.currentX)) player.currentX = 0;
+  const laneSpeed = Math.min(0.24 + (gameSpeed - BASE_SPEED) * 0.012, 0.42) * dt;
+  player.currentX += (player.targetLane - player.currentX) * laneSpeed;
+
+  // === Universal Vertical Physics (Fix mid-air stuck bug!) ===
+  // Whenever off the ground or moving vertically, gravity ALWAYS pulls player back to 0!
+  if (player.y > 0 || player.vy !== 0) {
+    player.y += player.vy * dt;
+    player.vy -= 0.65 * dt; // Gravity pull
+    if (player.y <= 0) {
+      player.y = 0;
+      player.vy = 0;
+      // If we were jumping and landed on the ground, resume running
+      if (player.state === 'JUMPING') {
+        player.state = 'RUNNING';
+      }
+    }
+  }
+
+  // Slide duration countdown
+  if (player.state === 'SLIDING') {
+    player.slideTimer -= dt * (1 + (gameSpeed - BASE_SPEED) * 0.03);
+    if (player.slideTimer <= 0) {
+      // If still in the air (very rare), become jumping; otherwise running on ground
+      player.state = player.y > 0 ? 'JUMPING' : 'RUNNING';
+    }
+  }
+
+  player.animTime += 0.12 * dt * (gameSpeed / BASE_SPEED);
+
+  // Speed lines animation
+  if (gameSpeed > 7.5) {
+    for (const sl of speedLines) {
+      sl.dist += sl.speed * dt * (gameSpeed / 8);
+      if (sl.dist > Math.max(width, height) * 0.8) {
+        sl.dist = Math.random() * 80 + 30;
+        sl.angle = Math.random() * Math.PI * 2;
+      }
+    }
+  }
+
+  // Obstacle generation
+  const spawnTriggerZ = Math.max(900, gameSpeed * 70);
+  if (nextSpawnZ - spawnTriggerZ < 0) {
+    spawnChunk();
+  }
+  nextSpawnZ -= stepMovement;
+
+  // Obstacles update & collision
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const ob = obstacles[i];
+    ob.z -= stepMovement;
+
+    const hitZRange = Math.max(26, gameSpeed * 1.8);
+    if (ob.z < hitZRange && ob.z > -hitZRange) {
+      if (Math.abs(player.currentX - ob.lane) < 0.52) {
+        let hit = false;
+        if (ob.type === 'HURDLE') {
+          if (player.y < 22) hit = true;
+        } else if (ob.type === 'HIGH_BARRIER') {
+          if (player.state !== 'SLIDING') hit = true;
+        } else if (ob.type === 'TRAIN') {
+          hit = true;
+        }
+
+        if (hit) {
+          gameOver();
+          return;
+        }
+      }
+    }
+
+    if (ob.z < -fov) obstacles.splice(i, 1);
+  }
+
+  // Coins update
+  for (let i = worldCoins.length - 1; i >= 0; i--) {
+    const coin = worldCoins[i];
+    coin.z -= stepMovement;
+
+    const coinHitRange = Math.max(32, gameSpeed * 2);
+    if (!coin.collected && coin.z < coinHitRange && coin.z > -coinHitRange) {
+      if (Math.abs(player.currentX - coin.lane) < 0.55) {
+        coin.collected = true;
+        coins++;
+        sound.playCoin();
+        const p = project(coin.lane, coin.y, coin.z);
+        for (let k = 0; k < 6; k++) {
+          particles.push({
+            x: p.x, y: p.y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5 - 2,
+            life: 1, color: '#ffd700'
+          });
+        }
+      }
+    }
+
+    if (coin.z < -fov || coin.collected) worldCoins.splice(i, 1);
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= 0.04 * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// --- Render Loop ---
+function draw() {
+  ctx.clearRect(0, 0, width, height);
+
+  // 1. Sky & Horizon Sunset
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
+  skyGrad.addColorStop(0, '#070a14');
+  skyGrad.addColorStop(0.7, '#182035');
+  skyGrad.addColorStop(1, '#ff6600');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, width, horizonY);
+
+  const sunGrad = ctx.createRadialGradient(width/2, horizonY, 5, width/2, horizonY, width * 0.45);
+  sunGrad.addColorStop(0, 'rgba(255, 190, 50, 0.7)');
+  sunGrad.addColorStop(1, 'rgba(255, 70, 0, 0)');
+  ctx.fillStyle = sunGrad;
+  ctx.fillRect(0, horizonY - 110, width, 120);
+
+  // Skyline
+  ctx.fillStyle = '#0f1422';
+  const bldgWidth = width / 9;
+  for (let b = 0; b < 9; b++) {
+    const bHeight = 25 + Math.sin(b * 3.7) * 22;
+    ctx.fillRect(b * bldgWidth, horizonY - bHeight, bldgWidth - 2, bHeight);
+  }
+
+  // 2. Ground Ballast
+  const groundGrad = ctx.createLinearGradient(0, horizonY, 0, height);
+  groundGrad.addColorStop(0, '#2d303a');
+  groundGrad.addColorStop(0.2, '#1b1c22');
+  groundGrad.addColorStop(1, '#0b0c0e');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, horizonY, width, height - horizonY);
+
+  // 3. Railway Tracks (3 Lanes)
+  const lanes = [-1, 0, 1];
+  const maxZ = 1000;
+
+  // Sleepers
+  ctx.fillStyle = '#3c332b';
+  for (let z = 20; z < maxZ; z += 35) {
+    const renderZ = (z - trackOffset + maxZ) % maxZ;
+    if (renderZ < 5) continue;
+    const pLeft = project(-1.45, 0, renderZ);
+    const pRight = project(1.45, 0, renderZ);
+    const tieHeight = Math.max(2, 6 * pLeft.scale);
+    ctx.fillRect(pLeft.x, pLeft.y, pRight.x - pLeft.x, tieHeight);
+  }
+
+  // Steel Rails
+  ctx.strokeStyle = '#94a3b8';
+  for (const lane of lanes) {
+    [-0.32, 0.32].forEach(offset => {
+      const near = project(lane + offset, 0, 0);
+      const far = project(lane + offset, 0, maxZ);
+      ctx.beginPath();
+      ctx.moveTo(far.x, far.y);
+      ctx.lineTo(near.x, near.y);
+      ctx.lineWidth = Math.max(1, 4 * near.scale);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+
+  // 4. Sorted Renderables (Back to Front)
+  const renderables = [];
+  for (const ob of obstacles) {
+    if (ob.z > 0 && ob.z < maxZ) renderables.push({ type: 'OBSTACLE', z: ob.z, data: ob });
+  }
+  for (const coin of worldCoins) {
+    if (coin.z > 0 && coin.z < maxZ && !coin.collected) renderables.push({ type: 'COIN', z: coin.z, data: coin });
+  }
+  renderables.push({ type: 'PLAYER', z: 0, data: player });
+  renderables.sort((a, b) => b.z - a.z);
+
+  for (const item of renderables) {
+    if (item.type === 'OBSTACLE') drawObstacle(item.data);
+    else if (item.type === 'COIN') drawCoin(item.data);
+    else if (item.type === 'PLAYER') drawPlayer(item.data);
+  }
+
+  // 5. Particles
+  for (const p of particles) {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4 * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  }
+
+  // 6. High-Speed Wind Lines effect
+  if (gameSpeed > 7.5 && gameState === 'PLAYING') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+    ctx.lineWidth = 1.5;
+    const cx = width / 2;
+    const cy = horizonY;
+    for (const sl of speedLines) {
+      const x1 = cx + Math.cos(sl.angle) * sl.dist;
+      const y1 = cy + Math.sin(sl.angle) * sl.dist * 0.7;
+      const x2 = cx + Math.cos(sl.angle) * (sl.dist + sl.len);
+      const y2 = cy + Math.sin(sl.angle) * (sl.dist + sl.len) * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 7. High-Speed Edge Vignette Glow
+  if (gameSpeed > 10.0 && gameState === 'PLAYING') {
+    ctx.save();
+    const glowAlpha = Math.min((gameSpeed - 10) / 10, 0.35);
+    const vigGrad = ctx.createRadialGradient(width/2, height/2, width*0.3, width/2, height/2, width*0.8);
+    vigGrad.addColorStop(0, 'rgba(255, 70, 0, 0)');
+    vigGrad.addColorStop(1, `rgba(255, 50, 0, ${glowAlpha})`);
+    ctx.fillStyle = vigGrad;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+}
+
+function drawObstacle(ob) {
+  const p = project(ob.lane, 0, ob.z);
+  const scale = p.scale;
+
+  if (ob.type === 'TRAIN') {
+    const trainW = 96 * scale;
+    const trainH = 135 * scale;
+    const x = p.x - trainW / 2;
+    const y = p.y - trainH;
+
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(x, y, trainW, trainH);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(x, y + trainH * 0.72, trainW, trainH * 0.28);
+
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(x + trainW * 0.12, y + trainH * 0.15, trainW * 0.76, trainH * 0.35);
+
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(x + trainW * 0.22, y + trainH * 0.62, 6.5 * scale, 0, Math.PI * 2);
+    ctx.arc(x + trainW * 0.78, y + trainH * 0.62, 6.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+  } else if (ob.type === 'HURDLE') {
+    const w = 88 * scale;
+    const h = 38 * scale;
+    const x = p.x - w / 2;
+    const y = p.y - h;
+
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(x + 5 * scale, y, 6 * scale, h);
+    ctx.fillRect(x + w - 11 * scale, y, 6 * scale, h);
+
+    ctx.fillStyle = '#eab308';
+    ctx.fillRect(x, y + 6 * scale, w, 20 * scale);
+
+    ctx.fillStyle = '#1e293b';
+    for (let s = 0; s < 4; s++) {
+      ctx.fillRect(x + s * 22 * scale + 4 * scale, y + 6 * scale, 10 * scale, 20 * scale);
+    }
+
+  } else if (ob.type === 'HIGH_BARRIER') {
+    const w = 110 * scale;
+    const totalH = 125 * scale;
+    const barH = 46 * scale;
+    const x = p.x - w / 2;
+    const y = p.y - totalH;
+
+    ctx.fillStyle = '#64748b';
+    ctx.fillRect(x, y, 9 * scale, totalH);
+    ctx.fillRect(x + w - 9 * scale, y, 9 * scale, totalH);
+
+    ctx.fillStyle = '#ea580c';
+    ctx.fillRect(x, y, w, barH);
+
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(x + 8 * scale, y + 14 * scale, w - 16 * scale, 10 * scale);
+  }
+}
+
+function drawCoin(coin) {
+  const p = project(coin.lane, coin.y, coin.z);
+  const scale = p.scale;
+  const size = 22 * scale;
+  const spin = Math.sin((coin.z + distance * 4) * 0.08);
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.scale(spin, 1);
+
+  ctx.fillStyle = '#f59e0b';
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#fef08a';
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.72, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#b45309';
+  ctx.font = `bold ${Math.max(9, size)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('★', 0, 1);
+
+  ctx.restore();
+}
+
+function drawPlayer(pl) {
+  const safeX = isNaN(pl.currentX) ? 0 : pl.currentX;
+  const safeY = isNaN(pl.y) ? 0 : pl.y;
+  const p = project(safeX, safeY, 0);
+  const scale = p.scale;
+
+  // Ground shadow is ALWAYS on the ground (y = 0)
+  const shadowP = project(safeX, 0, 0);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.beginPath();
+  const shadowW = (pl.state === 'SLIDING' ? 58 : 42) * scale;
+  const shadowH = 12 * scale;
+  ctx.ellipse(shadowP.x, shadowP.y, shadowW / 2, shadowH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  if (pl.state === 'SLIDING') {
+    const w = 64 * scale;
+    const h = 30 * scale;
+
+    ctx.fillStyle = '#1d4ed8';
+    ctx.fillRect(-w * 0.4, -h * 0.6, w * 0.6, h * 0.45);
+
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(-w * 0.1, -h * 0.95, w * 0.4, h * 0.6);
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(w * 0.38, -h * 0.75, 11 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+  } else {
+    const bodyW = 32 * scale;
+    const bodyH = 72 * scale;
+
+    const legPhase = Math.sin(pl.animTime * 2);
+    const leftLegOffset = pl.state === 'JUMPING' ? -10 * scale : legPhase * 12 * scale;
+    const rightLegOffset = pl.state === 'JUMPING' ? -10 * scale : -legPhase * 12 * scale;
+
+    // Legs
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fillRect(-bodyW * 0.35, -bodyH * 0.35, 8 * scale, bodyH * 0.35 + leftLegOffset);
+    ctx.fillRect(bodyW * 0.08, -bodyH * 0.35, 8 * scale, bodyH * 0.35 + rightLegOffset);
+
+    // Sneakers
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-bodyW * 0.4, leftLegOffset - 2, 10 * scale, 5 * scale);
+    ctx.fillRect(bodyW * 0.05, rightLegOffset - 2, 10 * scale, 5 * scale);
+
+    // Red Parkour Hoodie
+    ctx.fillStyle = '#e11d48';
+    ctx.beginPath();
+    ctx.roundRect(-bodyW * 0.45, -bodyH * 0.8, bodyW * 0.9, bodyH * 0.48, 6 * scale);
+    ctx.fill();
+
+    // Head & Cap
+    ctx.fillStyle = '#fed7aa';
+    ctx.beginPath();
+    ctx.arc(0, -bodyH * 0.92, 11 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#0284c7';
+    ctx.beginPath();
+    ctx.arc(0, -bodyH * 0.96, 12 * scale, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(-15 * scale, -bodyH * 0.97, 9 * scale, 4 * scale);
+  }
+
+  ctx.restore();
+}
+
+// Master Loop with Strict Clamp
+function gameLoop(timestamp) {
+  if (!lastTimestamp) lastTimestamp = timestamp;
+  const elapsed = timestamp - lastTimestamp;
+  lastTimestamp = timestamp;
+
+  // Clamped dt: 0.2 to 2.0 (never 0, never NaN!)
+  const dt = Math.max(0.2, Math.min(elapsed / 16.667, 2.0));
+
+  update(dt);
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
