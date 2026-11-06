@@ -80,7 +80,8 @@ class GameView @JvmOverloads constructor(
     private var touchOriginY = 0f
     private var touchDownTime = 0L
     private var isTouching = false
-    private val swipeThreshold = 30f
+    private var hasSwipedInGesture = false
+    private var swipeThreshold = 55f
 
     // Virtual Touch Button Rectangles (drawn at bottom of screen)
     private val btnLeftRect = RectF()
@@ -125,6 +126,7 @@ class GameView @JvmOverloads constructor(
         btnJumpRect.set(gap * 2 + btnSize, btnY, gap * 2 + btnSize * 2, btnY + btnSize)
         btnSlideRect.set(gap * 3 + btnSize * 2, btnY, gap * 3 + btnSize * 3, btnY + btnSize)
         btnRightRect.set(gap * 4 + btnSize * 3, btnY, gap * 4 + btnSize * 4, btnY + btnSize)
+        swipeThreshold = (screenWidth * 0.08f).coerceIn(45f, 95f)
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -219,6 +221,7 @@ class GameView @JvmOverloads constructor(
                 touchOriginY = y
                 touchDownTime = System.currentTimeMillis()
                 isTouching = true
+                hasSwipedInGesture = false
 
                 if (state == GameState.START || state == GameState.GAMEOVER) {
                     startGame()
@@ -228,37 +231,42 @@ class GameView @JvmOverloads constructor(
                 if (btnLeftRect.contains(x, y)) {
                     activeBtn = "LEFT"
                     moveLeft()
+                    hasSwipedInGesture = true
                     return true
                 } else if (btnJumpRect.contains(x, y)) {
                     activeBtn = "JUMP"
                     jump()
+                    hasSwipedInGesture = true
                     return true
                 } else if (btnSlideRect.contains(x, y)) {
                     activeBtn = "SLIDE"
                     slide()
+                    hasSwipedInGesture = true
                     return true
                 } else if (btnRightRect.contains(x, y)) {
                     activeBtn = "RIGHT"
                     moveRight()
+                    hasSwipedInGesture = true
                     return true
                 }
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (state != GameState.PLAYING || !isTouching) return true
+                if (state != GameState.PLAYING || !isTouching || hasSwipedInGesture) return true
 
                 val dx = x - touchOriginX
                 val dy = y - touchOriginY
-                val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                val absDx = abs(dx)
+                val absDy = abs(dy)
 
-                if (dist >= swipeThreshold) {
-                    if (abs(dx) > abs(dy)) {
+                // Trigger EXACTLY ONE swipe action per touch stroke, preventing overshooting!
+                if (max(absDx, absDy) >= swipeThreshold) {
+                    hasSwipedInGesture = true
+                    if (absDx > absDy) {
                         if (dx > 0) moveRight() else moveLeft()
                     } else {
                         if (dy > 0) slide() else jump()
                     }
-                    touchOriginX = x
-                    touchOriginY = y
                 }
             }
 
@@ -269,7 +277,7 @@ class GameView @JvmOverloads constructor(
                 val duration = System.currentTimeMillis() - touchDownTime
                 val dx = x - touchOriginX
                 val dy = y - touchOriginY
-                if (duration < 250 && hypot(dx.toDouble(), dy.toDouble()) < 20) {
+                if (!hasSwipedInGesture && duration < 250 && hypot(dx.toDouble(), dy.toDouble()) < 25) {
                     if (y < screenHeight * 0.45f) {
                         jump()
                     } else if (x < screenWidth * 0.33f) {

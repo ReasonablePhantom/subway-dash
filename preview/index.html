@@ -922,18 +922,20 @@ window.addEventListener('keydown', (e) => {
 let touchOriginX = 0;
 let touchOriginY = 0;
 let touchActive = false;
-const SWIPE_THRESHOLD = 20;
+const SWIPE_THRESHOLD = 35;
+let hasSwipedInTouch = false;
 
 canvas.addEventListener('touchstart', (e) => {
   if (e.touches.length > 0) {
     touchOriginX = e.touches[0].clientX;
     touchOriginY = e.touches[0].clientY;
     touchActive = true;
+    hasSwipedInTouch = false;
   }
 }, { passive: true });
 
 canvas.addEventListener('touchmove', (e) => {
-  if (!touchActive || gameState !== 'PLAYING' || e.touches.length === 0) return;
+  if (!touchActive || hasSwipedInTouch || gameState !== 'PLAYING' || e.touches.length === 0) return;
   const curX = e.touches[0].clientX;
   const curY = e.touches[0].clientY;
   const dx = curX - touchOriginX;
@@ -942,17 +944,19 @@ canvas.addEventListener('touchmove', (e) => {
   const absDy = Math.abs(dy);
 
   if (Math.max(absDx, absDy) >= SWIPE_THRESHOLD) {
+    hasSwipedInTouch = true;
     if (absDx > absDy) {
       if (dx > 0) moveRight(); else moveLeft();
     } else {
       if (dy > 0) slide(); else jump();
     }
-    touchOriginX = curX;
-    touchOriginY = curY;
   }
 }, { passive: true });
 
-canvas.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
+canvas.addEventListener('touchend', () => { 
+  touchActive = false; 
+  hasSwipedInTouch = false;
+}, { passive: true });
 
 canvas.addEventListener('click', (e) => {
   if (gameState === 'START') { startGame(); return; }
