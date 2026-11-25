@@ -6,9 +6,11 @@ import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.PointF
+import android.graphics.Rect
 import android.graphics.RectF
 import android.os.SystemClock
 import android.util.AttributeSet
+import android.util.Log
 import android.util.Size
 import android.view.View
 import androidx.annotation.OptIn
@@ -16,6 +18,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -166,74 +169,107 @@ class FaceControlManager(
     @Volatile
     private var isStarted = false
     @Volatile
-    private var needsCalibration = true
+    private var calibrationSamples = 0
+    private val calibrationTargetCount = 4
 
     // Calibration baseline
+    private var sumYaw = 0f
+    private var sumOffsetX = 0f
+    private var sumPitch = 0f
+    private var sumMouthRatio = 0f
     private var baseYaw = 0f
     private var baseOffsetX = 0f
     private var basePitch = 0f
     private var baseMouthRatio = 0.18f
 
-    // Smoothed state & hysteresis
+    // Smoothed state, hysteresis & anti-overshoot center brake
     private var smoothedSteer = 0f
     @Volatile
     var mappedLane: Int = 0
         private set
+    private var centerBrakeUntilMs = 0L
     private var prevJumpActive = false
     private var prevSlideActive = false
     private var lastJumpTimeMs = 0L
     private var lastSlideTimeMs = 0L
+    private var debugFrameCount = 0
 
     fun start(lifecycleOwner: LifecycleOwner) {
         if (isStarted) return
         isStarted = true
-        needsCalibration = true
-        smoothedSteer = 0f
-        mappedLane = 0
-        prevJumpActive = false
-        prevSlideActive = false
+        resetCalibrationState()
 
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
             if (!isStarted) return@addListener
-            try {
-                val provider = providerFuture.get()
-                cameraProvider = provider
+            previewView.post {
+                if (!isStarted) return@post
+                try {
+                    val provider = providerFuture.get()
+                    cameraProvider = provider
 
-                val resolutionSelector = ResolutionSelector.Builder()
-                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                    .setResolutionStrategy(
-                        ResolutionStrategy(
-                            Size(480, 640),
-                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                    val resolutionSelector = ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                        .setResolutionStrategy(
+                            ResolutionStrategy(
+                                Size(640, 480),
+                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                            )
                         )
-                    )
-                    .build()
+                        .build()
 
-                val preview = Preview.Builder()
-                    .setResolutionSelector(resolutionSelector)
-                    .build()
-                    .also { it.surfaceProvider = previewView.surfaceProvider }
+                    val preview = Preview.Builder()
+                        .setResolutionSelector(resolutionSelector)
+                        .build()
+                        .also { it.surfaceProvider = previewView.surfaceProvider }
 
-                val analysis = ImageAnalysis.Builder()
-                    .setResolutionSelector(resolutionSelector)
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { it.setAnalyzer(cameraExecutor, ::analyzeImage) }
+                    val analysis = ImageAnalysis.Builder()
+                        .setResolutionSelector(resolutionSelector)
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { it.setAnalyzer(cameraExecutor, ::analyzeImage) }
 
-                provider.unbindAll()
-                provider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_FRONT_CAMERA,
-                    preview,
-                    analysis
-                )
-                onStatusText("👀 找人脸")
-            } catch (e: Exception) {
-                isStarted = false
-                onError(e.localizedMessage ?: "前置摄像头启动失败")
+                    provider.unbindAll()
+                    val viewPort = previewView.viewPort
+                    if (viewPort != null) {
+                        val useCaseGroup = UseCaseGroup.Builder()
+                            .addUseCase(preview)
+                            .addUseCase(analysis)
+                            .setViewPort(viewPort)
+                            .build()
+                        provider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_FRONT_CAMERA,
+                            useCaseGroup
+                        )
+                    } else {
+                        provider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_FRONT_CAMERA,
+                            preview,
+                            analysis
+                        )
+                    }
+                    onStatusText("👀 找人脸")
+                } catch (e: Exception) {
+                    isStarted = false
+                    onError(e.localizedMessage ?: "前置摄像头启动失败")
+                }
             }
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    private fun resetCalibrationState() {
+        calibrationSamples = 0
+        sumYaw = 0f
+        sumOffsetX = 0f
+        sumPitch = 0f
+        sumMouthRatio = 0f
+        smoothedSteer = 0f
+        mappedLane = 0
+        centerBrakeUntilMs = 0L
+        prevJumpActive = false
+        prevSlideActive = false
     }
 
     fun stop() {
@@ -245,13 +281,9 @@ class FaceControlManager(
     }
 
     fun recalibrate() {
-        needsCalibration = true
-        smoothedSteer = 0f
-        mappedLane = 0
-        prevJumpActive = false
-        prevSlideActive = false
+        resetCalibrationState()
         onLaneChanged(0)
-        onStatusText("🎯 已校准")
+        onStatusText("🎯 校准中")
     }
 
     fun release() {
@@ -275,8 +307,9 @@ class FaceControlManager(
         }
 
         val rot = imageProxy.imageInfo.rotationDegrees
-        val uprightW = (if (rot == 90 || rot == 270) imageProxy.height else imageProxy.width).toFloat()
-        val uprightH = (if (rot == 90 || rot == 270) imageProxy.width else imageProxy.height).toFloat()
+        val rawW = imageProxy.width.toFloat()
+        val rawH = imageProxy.height.toFloat()
+        val uprightCrop = rotateCropRect(imageProxy.cropRect, rawW, rawH, rot)
         val inputImage = InputImage.fromMediaImage(mediaImage, rot)
 
         faceDetector.process(inputImage)
@@ -290,66 +323,94 @@ class FaceControlManager(
                 // Pick largest detected face
                 val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
                     ?: return@addOnSuccessListener
-                handleDetectedFace(face, uprightW, uprightH)
+                handleDetectedFace(face, uprightCrop)
             }
             .addOnCompleteListener {
                 imageProxy.close()
             }
     }
 
-    private fun handleDetectedFace(face: Face, uprightW: Float, uprightH: Float) {
+    private fun rotateCropRect(crop: Rect, rawW: Float, rawH: Float, rot: Int): RectF {
+        return when (rot) {
+            90 -> RectF(rawH - crop.bottom, crop.left.toFloat(), rawH - crop.top, crop.right.toFloat())
+            180 -> RectF(rawW - crop.right, rawH - crop.bottom, rawW - crop.left, rawH - crop.top)
+            270 -> RectF(crop.top.toFloat(), rawW - crop.right, crop.bottom.toFloat(), rawW - crop.left)
+            else -> RectF(crop.left.toFloat(), crop.top.toFloat(), crop.right.toFloat(), crop.bottom.toFloat())
+        }
+    }
+
+    private fun handleDetectedFace(face: Face, visibleRect: RectF) {
+        val visibleW = visibleRect.width().coerceAtLeast(1f)
+        val visibleH = visibleRect.height().coerceAtLeast(1f)
         // ML Kit positive EulerY = face turned toward right side of unmirrored image (= user's physical left).
         // Negating EulerY aligns positive with user's physical right (screen right in mirrored preview).
         val yawDeg = -face.headEulerAngleY
-        val mirroredOffsetX = 0.5f - (face.boundingBox.centerX().toFloat() / uprightW)
+        val centerNormX = (face.boundingBox.centerX().toFloat() - visibleRect.left) / visibleW
+        val mirroredOffsetX = 0.5f - centerNormX
         val pitchDeg = face.headEulerAngleX
         val mouthRatio = computeMouthOpenRatio(face)
 
-        if (needsCalibration) {
-            baseYaw = yawDeg
-            baseOffsetX = mirroredOffsetX
-            basePitch = pitchDeg
-            baseMouthRatio = mouthRatio ?: 0.18f
-            needsCalibration = false
+        if (calibrationSamples < calibrationTargetCount) {
+            sumYaw += yawDeg
+            sumOffsetX += mirroredOffsetX
+            sumPitch += pitchDeg
+            sumMouthRatio += (mouthRatio ?: 0.18f)
+            calibrationSamples++
+            baseYaw = sumYaw / calibrationSamples
+            baseOffsetX = sumOffsetX / calibrationSamples
+            basePitch = sumPitch / calibrationSamples
+            baseMouthRatio = sumMouthRatio / calibrationSamples
+            if (calibrationSamples < calibrationTargetCount) {
+                onStatusText("🎯 校准中")
+                return
+            }
         }
 
-        // Combined steering signal: light head turn (~13 deg) + subtle lean
-        val rawSteer = ((yawDeg - baseYaw) / 13.0f) * 0.72f +
-            ((mirroredOffsetX - baseOffsetX) / 0.14f) * 0.28f
-        smoothedSteer = smoothedSteer * 0.52f + rawSteer * 0.48f
+        // Calm steering range (~22 deg head turn or clear lean) to avoid hair-trigger overshooting
+        val rawSteer = ((yawDeg - baseYaw) / 22.0f) * 0.78f +
+            ((mirroredOffsetX - baseOffsetX) / 0.24f) * 0.22f
+        smoothedSteer = smoothedSteer * 0.62f + rawSteer * 0.38f
 
-        // 3-lane mapping with hysteresis (prevents jitter or skipping center lane)
+        val nowMs = SystemClock.elapsedRealtime()
+
+        // Step-by-step 3-lane mapping with hysteresis + 280ms Center Brake (never flies -1 -> +1 directly!)
         val newLane = when (mappedLane) {
-            0 -> when {
-                smoothedSteer < -0.46f -> -1
-                smoothedSteer > 0.46f -> 1
-                else -> 0
+            0 -> {
+                if (nowMs < centerBrakeUntilMs) {
+                    0
+                } else when {
+                    smoothedSteer < -0.45f -> -1
+                    smoothedSteer > 0.45f -> 1
+                    else -> 0
+                }
             }
-            -1 -> when {
-                smoothedSteer > 0.62f -> 1
-                smoothedSteer > -0.24f -> 0
-                else -> -1
-            }
-            1 -> when {
-                smoothedSteer < -0.62f -> -1
-                smoothedSteer < 0.24f -> 0
-                else -> 1
-            }
+            -1 -> if (smoothedSteer > -0.22f) 0 else -1
+            1 -> if (smoothedSteer < 0.22f) 0 else 1
             else -> 0
         }
 
         if (newLane != mappedLane) {
+            if (newLane == 0 && (mappedLane == -1 || mappedLane == 1)) {
+                centerBrakeUntilMs = nowMs + 280L
+            }
             mappedLane = newLane
             onLaneChanged(newLane)
+        }
+
+        debugFrameCount++
+        if (debugFrameCount == 5) {
+            Log.d(
+                "SubwayFace",
+                "visibleRect=$visibleRect box=${face.boundingBox} yaw=${"%.1f".format(yawDeg)} steer=${"%.2f".format(smoothedSteer)} lane=$mappedLane"
+            )
         }
 
         // Jump & Slide via pitch + mouth opening landmark ratio
         val pitchDelta = pitchDeg - basePitch
         val mouthDelta = if (mouthRatio != null) mouthRatio - baseMouthRatio else 0f
-        val wantJump = pitchDelta > 7.5f || mouthDelta > 0.15f
-        val wantSlide = !wantJump && pitchDelta < -7.5f
+        val wantJump = pitchDelta > 8.0f || mouthDelta > 0.16f
+        val wantSlide = !wantJump && pitchDelta < -8.0f
 
-        val nowMs = SystemClock.elapsedRealtime()
         if (wantJump && !prevJumpActive && nowMs - lastJumpTimeMs > 380L) {
             lastJumpTimeMs = nowMs
             onJump()
@@ -374,17 +435,20 @@ class FaceControlManager(
         }
         onStatusText(statusText)
 
-        // Mirrored normalized overlay coordinates
+        // Mirrored normalized overlay coordinates relative to visible crop region
         val b = face.boundingBox
         val mirroredBox = RectF(
-            1f - (b.right.toFloat() / uprightW),
-            b.top.toFloat() / uprightH,
-            1f - (b.left.toFloat() / uprightW),
-            b.bottom.toFloat() / uprightH
+            1f - ((b.right.toFloat() - visibleRect.left) / visibleW),
+            (b.top.toFloat() - visibleRect.top) / visibleH,
+            1f - ((b.left.toFloat() - visibleRect.left) / visibleW),
+            (b.bottom.toFloat() - visibleRect.top) / visibleH
         )
         val mapLandmark = { type: Int ->
             face.getLandmark(type)?.position?.let { pt ->
-                PointF(1f - (pt.x / uprightW), pt.y / uprightH)
+                PointF(
+                    1f - ((pt.x - visibleRect.left) / visibleW),
+                    (pt.y - visibleRect.top) / visibleH
+                )
             }
         }
         overlayView.updateOverlay(

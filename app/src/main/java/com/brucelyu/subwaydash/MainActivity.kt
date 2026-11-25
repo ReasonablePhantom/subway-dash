@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.CENTER_HORIZONTAL
         ).apply {
-            topMargin = dp(16)
+            topMargin = dp(38)
         }
         root.addView(modeToggleBtn, toggleParams)
 
@@ -185,7 +185,7 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.END
         ).apply {
-            topMargin = dp(56)
+            topMargin = dp(82)
             marginEnd = dp(12)
         }
         root.addView(pipCard, pipParams)

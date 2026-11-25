@@ -1586,10 +1586,13 @@ let faceLandmarker = null;
 let faceStream = null;
 let faceLoopRaf = 0;
 let lastFaceVideoTime = -1;
-let faceCalibrated = false;
+let faceCalSamples = 0;
+const FACE_CAL_TARGET = 4;
+let faceCalSum = { centerX: 0, yaw: 0, pitchRatio: 0 };
 let faceBaseline = { centerX: 0.5, yaw: 0, pitchRatio: 0.56 };
 let faceSmoothedSteer = 0;
 let faceMappedLane = 0;
+let faceCenterBrakeUntilMs = 0;
 let prevJumpActive = false;
 let prevSlideActive = false;
 let lastJumpTriggerMs = 0;
@@ -1663,9 +1666,11 @@ async function enableFaceControl() {
     await faceVideo.play();
 
     faceModeEnabled = true;
-    faceCalibrated = false;
+    faceCalSamples = 0;
+    faceCalSum = { centerX: 0, yaw: 0, pitchRatio: 0 };
     faceSmoothedSteer = 0;
     faceMappedLane = 0;
+    faceCenterBrakeUntilMs = 0;
     lastFaceVideoTime = -1;
 
     faceToggleBtn.classList.remove('loading');
@@ -1740,24 +1745,44 @@ function faceLoop() {
       const faceHeight = Math.max(0.08, face[152].y - face[10].y);
       const pitchRatio = (face[1].y - face[10].y) / faceHeight;
 
-      if (!faceCalibrated) {
-        faceBaseline = { centerX: faceCenterX, yaw: yawRatio, pitchRatio };
-        faceCalibrated = true;
+      if (faceCalSamples < FACE_CAL_TARGET) {
+        faceCalSum.centerX += faceCenterX;
+        faceCalSum.yaw += yawRatio;
+        faceCalSum.pitchRatio += pitchRatio;
+        faceCalSamples++;
+        faceBaseline = {
+          centerX: faceCalSum.centerX / faceCalSamples,
+          yaw: faceCalSum.yaw / faceCalSamples,
+          pitchRatio: faceCalSum.pitchRatio / faceCalSamples
+        };
+        if (faceCalSamples < FACE_CAL_TARGET) {
+          faceActionLabel.textContent = '🎯 校准中';
+          faceLoopRaf = requestAnimationFrame(faceLoop);
+          return;
+        }
       }
 
-      // Smooth absolute horizontal steering with hysteresis -> never overshoots middle track!
-      const rawSteer = (faceCenterX - faceBaseline.centerX) * 2.3 + (yawRatio - faceBaseline.yaw) * 1.15;
-      faceSmoothedSteer = faceSmoothedSteer * 0.55 + rawSteer * 0.45;
+      // Calm horizontal steering + step-by-step hysteresis with 280ms Center Brake
+      const rawSteer = (faceCenterX - faceBaseline.centerX) * 1.35 + (yawRatio - faceBaseline.yaw) * 0.72;
+      faceSmoothedSteer = faceSmoothedSteer * 0.62 + rawSteer * 0.38;
 
+      let nextLane = faceMappedLane;
       if (faceMappedLane === 0) {
-        if (faceSmoothedSteer < -0.15) faceMappedLane = -1;
-        else if (faceSmoothedSteer > 0.15) faceMappedLane = 1;
+        if (nowMs >= faceCenterBrakeUntilMs) {
+          if (faceSmoothedSteer < -0.22) nextLane = -1;
+          else if (faceSmoothedSteer > 0.22) nextLane = 1;
+        }
       } else if (faceMappedLane === -1) {
-        if (faceSmoothedSteer > 0.20) faceMappedLane = 1;
-        else if (faceSmoothedSteer > -0.07) faceMappedLane = 0;
+        if (faceSmoothedSteer > -0.10) nextLane = 0;
       } else if (faceMappedLane === 1) {
-        if (faceSmoothedSteer < -0.20) faceMappedLane = -1;
-        else if (faceSmoothedSteer < 0.07) faceMappedLane = 0;
+        if (faceSmoothedSteer < 0.10) nextLane = 0;
+      }
+
+      if (nextLane !== faceMappedLane) {
+        if (nextLane === 0 && (faceMappedLane === -1 || faceMappedLane === 1)) {
+          faceCenterBrakeUntilMs = nowMs + 280;
+        }
+        faceMappedLane = nextLane;
       }
       updateFaceLaneIndicator(faceMappedLane);
 
@@ -1827,9 +1852,12 @@ faceToggleBtn.addEventListener('click', () => {
 
 faceCalibrateBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  faceCalibrated = false;
+  faceCalSamples = 0;
+  faceCalSum = { centerX: 0, yaw: 0, pitchRatio: 0 };
   faceSmoothedSteer = 0;
-  faceActionLabel.textContent = '🎯 已校准';
+  faceMappedLane = 0;
+  faceCenterBrakeUntilMs = 0;
+  faceActionLabel.textContent = '🎯 校准中';
 });
 
 // Master Loop with Strict Clamp

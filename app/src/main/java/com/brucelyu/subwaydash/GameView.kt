@@ -43,6 +43,7 @@ class GameView @JvmOverloads constructor(
     private val baseSpeed = 5.2f
     private val maxSpeed = 16.5f
     private var currentSpeed = baseSpeed
+    private var lastUnscaledSpeed = baseSpeed
     private var speedTier = 1 // 1: 1.0x, 2: 1.5x, 3: 2.0x, 4: 2.5x+
     private var speedUpBannerText = ""
     private var speedUpBannerTimer = 0
@@ -159,6 +160,7 @@ class GameView @JvmOverloads constructor(
         coinsCollected = 0
         distance = 0f
         currentSpeed = baseSpeed
+        lastUnscaledSpeed = baseSpeed
         speedTier = 1
         speedUpBannerTimer = 0
         obstacles.clear()
@@ -187,7 +189,7 @@ class GameView @JvmOverloads constructor(
             bestScore = score
             prefs.edit().putInt("best_score", bestScore).apply()
         }
-        val multiplier = currentSpeed / baseSpeed
+        val multiplier = lastUnscaledSpeed / baseSpeed
         post {
             onGameStateChangedListener?.invoke(GameState.GAMEOVER)
             onGameOverListener?.invoke(score, coinsCollected, multiplier)
@@ -358,6 +360,7 @@ class GameView @JvmOverloads constructor(
         val safeDistance = distance.coerceAtLeast(0f)
         val progressBoost = (safeDistance / 70.0).pow(0.66) * 1.35
         val unscaledSpeed = (baseSpeed + progressBoost).coerceAtMost(maxSpeed.toDouble()).toFloat()
+        lastUnscaledSpeed = unscaledSpeed
         currentSpeed = unscaledSpeed * dtScale
 
         distance += currentSpeed * 0.055f
@@ -943,33 +946,36 @@ class GameView @JvmOverloads constructor(
         canvas.drawText("地铁极速跑酷 · 渐进加速版", screenWidth / 2f, screenHeight * 0.40f, textPaint)
 
         val btnY = screenHeight * 0.50f
+        val startLabel = "开始极速冲刺"
+        textPaint.textSize = screenHeight * 0.026f
+        val btnHalfW = (textPaint.measureText(startLabel) / 2f + screenWidth * 0.06f).coerceAtLeast(220f)
+        val btnHalfH = screenHeight * 0.036f
         paint.color = Color.rgb(255, 102, 0)
         canvas.drawRoundRect(
-            screenWidth / 2f - 180f,
-            btnY - 45f,
-            screenWidth / 2f + 180f,
-            btnY + 45f,
-            45f,
-            45f,
+            screenWidth / 2f - btnHalfW,
+            btnY - btnHalfH,
+            screenWidth / 2f + btnHalfW,
+            btnY + btnHalfH,
+            btnHalfH,
+            btnHalfH,
             paint
         )
 
         textPaint.color = Color.WHITE
-        textPaint.textSize = screenHeight * 0.028f
-        canvas.drawText("开始极速冲刺", screenWidth / 2f, btnY + 10f, textPaint)
+        canvas.drawText(startLabel, screenWidth / 2f, btnY + textPaint.textSize * 0.35f, textPaint)
 
         textPaint.color = Color.rgb(255, 190, 80)
-        textPaint.textSize = screenHeight * 0.022f
-        canvas.drawText("⚡ 动态加速: 随着距离越跑越快，刺激翻倍！", screenWidth / 2f, screenHeight * 0.64f, textPaint)
+        textPaint.textSize = screenHeight * 0.019f
+        canvas.drawText("⚡ 动态加速: 随着距离越跑越快，刺激翻倍！", screenWidth / 2f, screenHeight * 0.63f, textPaint)
 
         textPaint.color = Color.rgb(148, 163, 184)
-        textPaint.textSize = screenHeight * 0.019f
-        val guideText = if (isFaceControlEnabled) {
-            "📷 人脸体感: 左右转头变道 · 抬头/张嘴跳跃 · 低头滑铲"
+        textPaint.textSize = screenHeight * 0.017f
+        if (isFaceControlEnabled) {
+            canvas.drawText("📷 人脸体感已开启：左右转头切换赛道", screenWidth / 2f, screenHeight * 0.68f, textPaint)
+            canvas.drawText("抬头/张嘴跳跃 · 低头滑铲 (可随时划屏备用)", screenWidth / 2f, screenHeight * 0.715f, textPaint)
         } else {
-            "📱 触屏: 屏幕任意位置滑动 或 点击底部4大按键"
+            canvas.drawText("📱 触屏：屏幕任意位置滑动 或 点击底部4大按键", screenWidth / 2f, screenHeight * 0.68f, textPaint)
         }
-        canvas.drawText(guideText, screenWidth / 2f, screenHeight * 0.70f, textPaint)
     }
 
     private fun drawGameOverScreen(canvas: Canvas, unscaledSpeed: Float) {
@@ -985,7 +991,7 @@ class GameView @JvmOverloads constructor(
         textPaint.textSize = screenHeight * 0.028f
         canvas.drawText("本次得分: ${score}m", screenWidth / 2f, screenHeight * 0.38f, textPaint)
 
-        val multiplier = String.format("%.1f", unscaledSpeed / baseSpeed)
+        val multiplier = String.format("%.1f", lastUnscaledSpeed / baseSpeed)
         textPaint.color = Color.rgb(255, 170, 0)
         canvas.drawText("极速倍率: ${multiplier}x 速度", screenWidth / 2f, screenHeight * 0.44f, textPaint)
 
@@ -996,19 +1002,22 @@ class GameView @JvmOverloads constructor(
         canvas.drawText("历史最高: ${bestScore}m", screenWidth / 2f, screenHeight * 0.56f, textPaint)
 
         val btnY = screenHeight * 0.66f
+        val retryLabel = "点击屏幕再跑一次"
+        textPaint.textSize = screenHeight * 0.025f
+        val btnHalfW = (textPaint.measureText(retryLabel) / 2f + screenWidth * 0.06f).coerceAtLeast(220f)
+        val btnHalfH = screenHeight * 0.035f
         paint.color = Color.rgb(255, 102, 0)
         canvas.drawRoundRect(
-            screenWidth / 2f - 180f,
-            btnY - 45f,
-            screenWidth / 2f + 180f,
-            btnY + 45f,
-            45f,
-            45f,
+            screenWidth / 2f - btnHalfW,
+            btnY - btnHalfH,
+            screenWidth / 2f + btnHalfW,
+            btnY + btnHalfH,
+            btnHalfH,
+            btnHalfH,
             paint
         )
 
         textPaint.color = Color.WHITE
-        textPaint.textSize = screenHeight * 0.028f
-        canvas.drawText("点击屏幕再跑一次", screenWidth / 2f, btnY + 10f, textPaint)
+        canvas.drawText(retryLabel, screenWidth / 2f, btnY + textPaint.textSize * 0.35f, textPaint)
     }
 }
