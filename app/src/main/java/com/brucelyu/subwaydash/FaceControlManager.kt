@@ -10,7 +10,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.os.SystemClock
 import android.util.AttributeSet
-import android.util.Log
 import android.util.Size
 import android.view.View
 import androidx.annotation.OptIn
@@ -192,7 +191,6 @@ class FaceControlManager(
     private var prevSlideActive = false
     private var lastJumpTimeMs = 0L
     private var lastSlideTimeMs = 0L
-    private var debugFrameCount = 0
 
     fun start(lifecycleOwner: LifecycleOwner) {
         if (isStarted) return
@@ -395,14 +393,6 @@ class FaceControlManager(
             }
             mappedLane = newLane
             onLaneChanged(newLane)
-        }
-
-        debugFrameCount++
-        if (debugFrameCount == 5) {
-            Log.d(
-                "SubwayFace",
-                "visibleRect=$visibleRect box=${face.boundingBox} yaw=${"%.1f".format(yawDeg)} steer=${"%.2f".format(smoothedSteer)} lane=$mappedLane"
-            )
         }
 
         // Jump & Slide via pitch + mouth opening landmark ratio

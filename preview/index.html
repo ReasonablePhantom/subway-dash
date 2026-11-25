@@ -694,9 +694,14 @@ let coins = 0;
 let bestScore = parseInt(localStorage.getItem('subway_best_score') || '0', 10);
 let faceModeEnabled = false;
 
-// Progressive Acceleration
+// Progressive Acceleration (Touch vs calmer Face Control pacing)
 const BASE_SPEED = 5.2;
 const MAX_SPEED = 16.5;
+const FACE_BASE_SPEED = 4.4;
+const FACE_MAX_SPEED = 10.8;
+function getActiveBaseSpeed() {
+  return faceModeEnabled ? FACE_BASE_SPEED : BASE_SPEED;
+}
 let gameSpeed = BASE_SPEED;
 let speedTier = 1;
 let distance = 0;
@@ -769,7 +774,7 @@ function startGame() {
   score = 0;
   coins = 0;
   distance = 0;
-  gameSpeed = BASE_SPEED;
+  gameSpeed = getActiveBaseSpeed();
   speedTier = 1;
   obstacles = [];
   worldCoins = [];
@@ -815,14 +820,15 @@ function showSpeedUpBanner(text) {
 
 function updateSpeedBadge() {
   const badge = document.getElementById('speedBadge');
-  if (isNaN(gameSpeed)) gameSpeed = BASE_SPEED;
-  const multiplier = (gameSpeed / BASE_SPEED).toFixed(1);
+  const activeBase = getActiveBaseSpeed();
+  if (isNaN(gameSpeed)) gameSpeed = activeBase;
+  const multiplier = (gameSpeed / activeBase).toFixed(1);
   if (multiplier < 1.3) {
-    badge.innerHTML = `⚡ ${multiplier}x 舒适巡航`;
+    badge.innerHTML = faceModeEnabled ? `📷 ${multiplier}x 体感缓速` : `⚡ ${multiplier}x 舒适巡航`;
     badge.style.background = 'rgba(0, 180, 216, 0.4)';
     badge.style.borderColor = 'rgba(0, 210, 255, 0.8)';
   } else if (multiplier < 1.8) {
-    badge.innerHTML = `⚡ ${multiplier}x 疾速起飞`;
+    badge.innerHTML = faceModeEnabled ? `📷 ${multiplier}x 体感加速` : `⚡ ${multiplier}x 疾速起飞`;
     badge.style.background = 'rgba(255, 140, 0, 0.45)';
     badge.style.borderColor = 'rgba(255, 170, 0, 0.9)';
   } else if (multiplier < 2.4) {
@@ -845,7 +851,7 @@ function gameOver() {
     localStorage.setItem('subway_best_score', bestScore.toString());
   }
 
-  const multiplier = (gameSpeed / BASE_SPEED).toFixed(1);
+  const multiplier = (gameSpeed / getActiveBaseSpeed()).toFixed(1);
   document.getElementById('finalScore').textContent = `${score}m`;
   document.getElementById('finalSpeed').textContent = `${multiplier}x 极速`;
   document.getElementById('finalCoins').textContent = `🪙 ${coins}`;
@@ -899,7 +905,7 @@ async function uploadRecordToBruceLyu() {
   statusEl.className = 'upload-status loading';
   statusEl.textContent = '正在将战绩同步至 brucelyu.cc...';
 
-  const multiplier = parseFloat((gameSpeed / BASE_SPEED).toFixed(1));
+  const multiplier = parseFloat((gameSpeed / getActiveBaseSpeed()).toFixed(1));
 
   const payload = {
     playerName: playerName,
@@ -1002,7 +1008,9 @@ function spawnWaveAt(zPos) {
 
 function spawnChunk() {
   spawnWaveAt(nextSpawnZ);
-  const reactionDist = Math.max(380, gameSpeed * 44);
+  const minDist = faceModeEnabled ? 490 : 380;
+  const distFactor = faceModeEnabled ? 60 : 44;
+  const reactionDist = Math.max(minDist, gameSpeed * distFactor);
   nextSpawnZ += reactionDist + Math.random() * 100;
 }
 
@@ -1132,18 +1140,23 @@ function update(dt) {
   // Ensure distance is valid number >= 0
   if (isNaN(distance) || distance < 0) distance = 0;
 
-  // Progressive Speed Curve: Starts at 5.2, scales smoothly to 16.5
-  const progressBoost = Math.pow(distance / 70, 0.66) * 1.35;
-  gameSpeed = Math.min(BASE_SPEED + progressBoost, MAX_SPEED);
-  if (isNaN(gameSpeed)) gameSpeed = BASE_SPEED;
+  // Progressive Speed Curve (Face mode ramps up ~4x gentler for comfortable head/face play!)
+  const activeBase = getActiveBaseSpeed();
+  const activeMax = faceModeEnabled ? FACE_MAX_SPEED : MAX_SPEED;
+  const progressBoost = faceModeEnabled
+    ? Math.pow(distance / 180, 0.58) * 0.95
+    : Math.pow(distance / 70, 0.66) * 1.35;
+  gameSpeed = Math.min(activeBase + progressBoost, activeMax);
+  if (isNaN(gameSpeed)) gameSpeed = activeBase;
 
   const stepMovement = gameSpeed * dt;
   distance += stepMovement * 0.055;
   score = Math.floor(distance);
   trackOffset = (trackOffset + stepMovement) % 60;
 
-  // Speed Tiers checking
-  const newTier = gameSpeed < 7.5 ? 1 : gameSpeed < 10.5 ? 2 : gameSpeed < 13.5 ? 3 : 4;
+  // Speed Tiers checking relative to mode base speed
+  const speedRatio = gameSpeed / activeBase;
+  const newTier = speedRatio < 1.44 ? 1 : speedRatio < 2.0 ? 2 : speedRatio < 2.5 ? 3 : 4;
   if (newTier > speedTier) {
     speedTier = newTier;
     if (speedTier === 2) showSpeedUpBanner('⚡ 提速! 进入疾速阶段 ⚡');
@@ -1157,7 +1170,7 @@ function update(dt) {
 
   // Smooth lane interpolation
   if (isNaN(player.currentX)) player.currentX = 0;
-  const laneSpeed = Math.min(0.24 + (gameSpeed - BASE_SPEED) * 0.012, 0.42) * dt;
+  const laneSpeed = Math.min(0.24 + (gameSpeed - activeBase) * 0.012, 0.42) * dt;
   player.currentX += (player.targetLane - player.currentX) * laneSpeed;
 
   // === Universal Vertical Physics (Fix mid-air stuck bug!) ===

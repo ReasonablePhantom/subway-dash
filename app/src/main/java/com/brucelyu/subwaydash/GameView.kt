@@ -39,9 +39,11 @@ class GameView @JvmOverloads constructor(
     private val pendingActions = ConcurrentLinkedQueue<() -> Unit>()
 
     // Progressive Acceleration System
-    // Starts comfortably at 5.2f, scales progressively up to 16.5f!
+    // Touch mode: 5.2f -> 16.5f; Face mode: gentler 4.4f -> 10.8f with ~4x slower ramp-up!
     private val baseSpeed = 5.2f
     private val maxSpeed = 16.5f
+    private val faceBaseSpeed = 4.4f
+    private val faceMaxSpeed = 10.8f
     private var currentSpeed = baseSpeed
     private var lastUnscaledSpeed = baseSpeed
     private var speedTier = 1 // 1: 1.0x, 2: 1.5x, 3: 2.0x, 4: 2.5x+
@@ -154,13 +156,15 @@ class GameView @JvmOverloads constructor(
         gameThread = Thread(this).apply { start() }
     }
 
+    private fun activeBaseSpeed(): Float = if (isFaceControlEnabled) faceBaseSpeed else baseSpeed
+
     private fun startGame() {
         state = GameState.PLAYING
         score = 0
         coinsCollected = 0
         distance = 0f
-        currentSpeed = baseSpeed
-        lastUnscaledSpeed = baseSpeed
+        currentSpeed = activeBaseSpeed()
+        lastUnscaledSpeed = activeBaseSpeed()
         speedTier = 1
         speedUpBannerTimer = 0
         obstacles.clear()
@@ -189,7 +193,7 @@ class GameView @JvmOverloads constructor(
             bestScore = score
             prefs.edit().putInt("best_score", bestScore).apply()
         }
-        val multiplier = lastUnscaledSpeed / baseSpeed
+        val multiplier = lastUnscaledSpeed / activeBaseSpeed()
         post {
             onGameStateChangedListener?.invoke(GameState.GAMEOVER)
             onGameOverListener?.invoke(score, coinsCollected, multiplier)
@@ -356,10 +360,16 @@ class GameView @JvmOverloads constructor(
             action()
         }
 
-        // Progressive Speed Curve: scales smoothly with distance up to 16.5f!
+        // Progressive Speed Curve (Face mode ramps up ~4x gentler for comfortable head/face play!)
         val safeDistance = distance.coerceAtLeast(0f)
-        val progressBoost = (safeDistance / 70.0).pow(0.66) * 1.35
-        val unscaledSpeed = (baseSpeed + progressBoost).coerceAtMost(maxSpeed.toDouble()).toFloat()
+        val curBase = activeBaseSpeed()
+        val curMax = if (isFaceControlEnabled) faceMaxSpeed else maxSpeed
+        val progressBoost = if (isFaceControlEnabled) {
+            (safeDistance / 180.0).pow(0.58) * 0.95
+        } else {
+            (safeDistance / 70.0).pow(0.66) * 1.35
+        }
+        val unscaledSpeed = (curBase + progressBoost).coerceAtMost(curMax.toDouble()).toFloat()
         lastUnscaledSpeed = unscaledSpeed
         currentSpeed = unscaledSpeed * dtScale
 
@@ -367,11 +377,12 @@ class GameView @JvmOverloads constructor(
         score = distance.toInt()
         trackOffset = (trackOffset + currentSpeed) % 60f
 
-        // Milestone Speed Tier checking
+        // Milestone Speed Tier checking relative to mode base speed
+        val speedRatio = unscaledSpeed / curBase
         val newTier = when {
-            unscaledSpeed < 7.5f -> 1
-            unscaledSpeed < 10.5f -> 2
-            unscaledSpeed < 13.5f -> 3
+            speedRatio < 1.44f -> 1
+            speedRatio < 2.0f -> 2
+            speedRatio < 2.5f -> 3
             else -> 4
         }
         if (newTier > speedTier) {
@@ -390,7 +401,7 @@ class GameView @JvmOverloads constructor(
         }
 
         // Responsive lane transition (Scales with speed so you can dodge in time!)
-        val laneSpeed = (0.24f + (unscaledSpeed - baseSpeed) * 0.012f).coerceAtMost(0.42f) * dtScale
+        val laneSpeed = (0.24f + (unscaledSpeed - curBase) * 0.012f).coerceAtMost(0.42f) * dtScale
         playerCurrentX += (playerTargetLane - playerCurrentX) * laneSpeed
 
         // Jump and Gravity
@@ -411,7 +422,7 @@ class GameView @JvmOverloads constructor(
             }
         }
 
-        animTime += 0.12f * dtScale * (unscaledSpeed / baseSpeed)
+        animTime += 0.12f * dtScale * (unscaledSpeed / curBase)
 
         // Speed lines animation
         if (unscaledSpeed > 7.5f) {
@@ -527,7 +538,9 @@ class GameView @JvmOverloads constructor(
 
     private fun spawnChunk() {
         spawnWaveAt(nextSpawnZ)
-        val reactionDist = max(380f, currentSpeed * 44f)
+        val minReactionDist = if (isFaceControlEnabled) 490f else 380f
+        val distFactor = if (isFaceControlEnabled) 60f else 44f
+        val reactionDist = max(minReactionDist, lastUnscaledSpeed * distFactor)
         nextSpawnZ += reactionDist + (Math.random().toFloat() * 100f)
     }
 
@@ -887,7 +900,7 @@ class GameView @JvmOverloads constructor(
     }
 
     private fun drawHud(canvas: Canvas, unscaledSpeed: Float) {
-        val multiplier = String.format("%.1f", unscaledSpeed / baseSpeed)
+        val multiplier = String.format("%.1f", unscaledSpeed / activeBaseSpeed())
 
         textPaint.color = Color.WHITE
         textPaint.textSize = screenHeight * 0.034f
@@ -896,16 +909,21 @@ class GameView @JvmOverloads constructor(
 
         // Speed multiplier pill
         textPaint.textSize = screenHeight * 0.018f
-        val speedBadgeText = "⚡ ${multiplier}x 速度"
+        val speedBadgeText = if (isFaceControlEnabled) {
+            "📷 ${multiplier}x 体感缓速"
+        } else {
+            "⚡ ${multiplier}x 速度"
+        }
+        val badgeW = textPaint.measureText(speedBadgeText) + 42f
         paint.color = when (speedTier) {
             1 -> Color.argb(120, 0, 180, 216)
             2 -> Color.argb(160, 255, 140, 0)
             3 -> Color.argb(180, 230, 57, 70)
             else -> Color.argb(200, 168, 85, 247)
         }
-        canvas.drawRoundRect(40f, 105f, 190f, 145f, 20f, 20f, paint)
+        canvas.drawRoundRect(40f, 105f, 40f + badgeW, 148f, 22f, 22f, paint)
         textPaint.color = Color.WHITE
-        canvas.drawText(speedBadgeText, 55f, 132f, textPaint)
+        canvas.drawText(speedBadgeText, 60f, 134f, textPaint)
 
         textPaint.color = Color.rgb(255, 215, 0)
         textPaint.textSize = screenHeight * 0.032f
@@ -991,7 +1009,7 @@ class GameView @JvmOverloads constructor(
         textPaint.textSize = screenHeight * 0.028f
         canvas.drawText("本次得分: ${score}m", screenWidth / 2f, screenHeight * 0.38f, textPaint)
 
-        val multiplier = String.format("%.1f", lastUnscaledSpeed / baseSpeed)
+        val multiplier = String.format("%.1f", lastUnscaledSpeed / activeBaseSpeed())
         textPaint.color = Color.rgb(255, 170, 0)
         canvas.drawText("极速倍率: ${multiplier}x 速度", screenWidth / 2f, screenHeight * 0.44f, textPaint)
 
