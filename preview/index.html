@@ -348,6 +348,120 @@
       color: #cbd5e1;
       line-height: 1.7;
     }
+
+    /* Face Control Toggle & PiP Overlay */
+    .face-mode-pill {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1.5px solid rgba(148, 163, 184, 0.45);
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .face-mode-pill:active {
+      transform: translateX(-50%) scale(0.94);
+    }
+    .face-mode-pill.active {
+      background: rgba(8, 51, 68, 0.88);
+      border-color: #22d3ee;
+      color: #67e8f9;
+      box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+    }
+    .face-mode-pill.loading {
+      border-color: #fbbf24;
+      color: #fde68a;
+    }
+
+    .face-pip-card {
+      position: absolute;
+      top: calc(max(16px, env(safe-area-inset-top)) + 48px);
+      right: 12px;
+      width: 112px;
+      background: rgba(6, 10, 20, 0.88);
+      border: 1.5px solid rgba(34, 211, 238, 0.65);
+      border-radius: 14px;
+      overflow: hidden;
+      z-index: 24;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+      display: none;
+    }
+    .face-pip-canvas {
+      display: block;
+      width: 112px;
+      height: 112px;
+      background: #020617;
+    }
+    .face-lane-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      padding: 3px 5px 0 5px;
+      background: rgba(15, 23, 42, 0.9);
+    }
+    .face-lane-seg {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(148, 163, 184, 0.25);
+      transition: background 0.12s ease;
+    }
+    .face-lane-seg.active {
+      background: #22d3ee;
+      box-shadow: 0 0 6px #22d3ee;
+    }
+    .face-pip-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 6px 5px 6px;
+      font-size: 10px;
+      color: #e2e8f0;
+      font-weight: 700;
+    }
+    .face-cal-btn {
+      background: rgba(34, 211, 238, 0.18);
+      border: 1px solid rgba(34, 211, 238, 0.5);
+      color: #67e8f9;
+      border-radius: 6px;
+      padding: 2px 5px;
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .face-cal-btn:active {
+      transform: scale(0.92);
+    }
+    .face-toast {
+      position: absolute;
+      top: calc(max(16px, env(safe-area-inset-top)) + 44px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(248, 113, 113, 0.7);
+      color: #fecaca;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      z-index: 30;
+      max-width: 90%;
+      text-align: center;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -362,6 +476,23 @@
         <div class="hud-speed-badge" id="speedBadge">⚡ 1.0x 巡航</div>
       </div>
       <div class="hud-coins" id="coinsDisplay">🪙 0</div>
+    </div>
+
+    <!-- Face Control Mode Toggle & PiP Preview -->
+    <button class="face-mode-pill" id="faceToggleBtn" type="button">📷 开启人脸操控</button>
+    <div class="face-toast" id="faceToast"></div>
+    <video id="faceVideo" playsinline muted style="display: none;"></video>
+    <div class="face-pip-card" id="facePipCard">
+      <canvas class="face-pip-canvas" id="facePipCanvas" width="224" height="224"></canvas>
+      <div class="face-lane-bar">
+        <div class="face-lane-seg" id="faceLaneSegLeft"></div>
+        <div class="face-lane-seg active" id="faceLaneSegCenter"></div>
+        <div class="face-lane-seg" id="faceLaneSegRight"></div>
+      </div>
+      <div class="face-pip-footer">
+        <span id="faceActionLabel">😐 待识别</span>
+        <button class="face-cal-btn" id="faceCalibrateBtn" type="button">🎯校准</button>
+      </div>
     </div>
 
     <!-- Center Banner for Speed Up alerts -->
@@ -381,10 +512,10 @@
       <div class="overlay-subtitle">地铁极速跑酷 · 渐进加速版</div>
       <button class="play-btn" id="startBtn" style="width: auto; padding: 16px 48px;">开始奔跑</button>
       <div class="control-guide">
-        ⚡ <b>动态渐进加速</b><br>
-        平稳起步，跑得越远速度越快！<br>
-        📱 触屏：<b>任意位置滑动</b> 或 点击下方 <b>4个大虚拟按键</b><br>
-        💻 电脑：A/D 或 ←/→ 变道，W/空格 跳跃，S/↓ 滑铲
+        ⚡ <b>动态渐进加速</b>：平稳起步，越跑越快！<br>
+        📷 <b>人脸体感</b>（点顶部开启）：左右转头/偏头变道 · <b>张嘴/扬眉</b> 跳跃 · <b>轻低头/皱眉</b> 滑铲<br>
+        📱 <b>触屏</b>：任意位置滑动 或 底部虚拟按键<br>
+        💻 <b>电脑</b>：A/D 或 ←/→ 变道，W/空格 跳跃，S/↓ 滑铲
       </div>
     </div>
 
@@ -561,6 +692,7 @@ let gameState = 'START';
 let score = 0;
 let coins = 0;
 let bestScore = parseInt(localStorage.getItem('subway_best_score') || '0', 10);
+let faceModeEnabled = false;
 
 // Progressive Acceleration
 const BASE_SPEED = 5.2;
@@ -661,7 +793,10 @@ function startGame() {
   document.getElementById('startScreen').style.display = 'none';
   document.getElementById('gameOverScreen').style.display = 'none';
   document.getElementById('hud').style.display = 'flex';
-  document.getElementById('touchControls').style.display = 'flex';
+  document.getElementById('touchControls').style.display = faceModeEnabled ? 'none' : 'flex';
+  if (faceModeEnabled) {
+    document.getElementById('facePipCard').style.display = 'block';
+  }
   updateSpeedBadge();
 }
 
@@ -746,6 +881,7 @@ function gameOver() {
 
   document.getElementById('hud').style.display = 'none';
   document.getElementById('touchControls').style.display = 'none';
+  document.getElementById('facePipCard').style.display = 'none';
   document.getElementById('gameOverScreen').style.display = 'flex';
 }
 
@@ -1421,6 +1557,280 @@ function drawPlayer(pl) {
 
   ctx.restore();
 }
+
+// --- MediaPipe Face Control Engine (reusing ASL Learner FaceLandmarker patterns) ---
+const FACE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const FACE_WASM_URL =
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+const FACE_OVAL_INDICES = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377,
+  152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10
+];
+const LEFT_EYEBROW = [70, 63, 105, 66, 107];
+const RIGHT_EYEBROW = [336, 296, 334, 293, 300];
+
+const faceToggleBtn = document.getElementById('faceToggleBtn');
+const facePipCard = document.getElementById('facePipCard');
+const facePipCanvas = document.getElementById('facePipCanvas');
+const facePipCtx = facePipCanvas.getContext('2d');
+const faceVideo = document.getElementById('faceVideo');
+const faceActionLabel = document.getElementById('faceActionLabel');
+const faceCalibrateBtn = document.getElementById('faceCalibrateBtn');
+const faceToastEl = document.getElementById('faceToast');
+const faceSegLeft = document.getElementById('faceLaneSegLeft');
+const faceSegCenter = document.getElementById('faceLaneSegCenter');
+const faceSegRight = document.getElementById('faceLaneSegRight');
+
+let faceLandmarker = null;
+let faceStream = null;
+let faceLoopRaf = 0;
+let lastFaceVideoTime = -1;
+let faceCalibrated = false;
+let faceBaseline = { centerX: 0.5, yaw: 0, pitchRatio: 0.56 };
+let faceSmoothedSteer = 0;
+let faceMappedLane = 0;
+let prevJumpActive = false;
+let prevSlideActive = false;
+let lastJumpTriggerMs = 0;
+let lastSlideTriggerMs = 0;
+
+function showFaceToast(msg) {
+  faceToastEl.textContent = msg;
+  faceToastEl.style.display = 'block';
+  clearTimeout(faceToastEl._hideTimer);
+  faceToastEl._hideTimer = setTimeout(() => {
+    faceToastEl.style.display = 'none';
+  }, 4200);
+}
+
+function updateFaceLaneIndicator(lane) {
+  faceSegLeft.classList.toggle('active', lane === -1);
+  faceSegCenter.classList.toggle('active', lane === 0);
+  faceSegRight.classList.toggle('active', lane === 1);
+}
+
+function drawMirroredFacePath(landmarks, indices, color, lineWidth, mapPt, dash = null) {
+  if (!landmarks || indices.length < 2) return;
+  facePipCtx.save();
+  facePipCtx.strokeStyle = color;
+  facePipCtx.lineWidth = lineWidth;
+  if (dash) facePipCtx.setLineDash(dash);
+  facePipCtx.beginPath();
+  const pt0 = mapPt(landmarks[indices[0]]);
+  facePipCtx.moveTo(pt0.x, pt0.y);
+  for (let i = 1; i < indices.length; i++) {
+    const pt = mapPt(landmarks[indices[i]]);
+    facePipCtx.lineTo(pt.x, pt.y);
+  }
+  facePipCtx.stroke();
+  facePipCtx.restore();
+}
+
+async function enableFaceControl() {
+  if (window.location.protocol === 'file:') {
+    showFaceToast('浏览器安全限制：请用 python3 -m http.server 8000 启动后访问 http://localhost:8000 再启用摄像头');
+    return;
+  }
+
+  faceToggleBtn.disabled = true;
+  faceToggleBtn.classList.add('loading');
+  faceToggleBtn.textContent = '⏳ 加载人脸模型…';
+
+  try {
+    if (!faceLandmarker) {
+      const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+      const fileset = await vision.FilesetResolver.forVisionTasks(FACE_WASM_URL);
+      const makeOpts = (delegate) => ({
+        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
+        outputFaceBlendshapes: true,
+        runningMode: 'VIDEO',
+        numFaces: 1
+      });
+      try {
+        faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, makeOpts('GPU'));
+      } catch (_) {
+        faceLandmarker = await vision.FaceLandmarker.createFromOptions(fileset, makeOpts('CPU'));
+      }
+    }
+
+    faceToggleBtn.textContent = '⏳ 打开摄像头…';
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
+      audio: false
+    });
+    faceVideo.srcObject = faceStream;
+    await faceVideo.play();
+
+    faceModeEnabled = true;
+    faceCalibrated = false;
+    faceSmoothedSteer = 0;
+    faceMappedLane = 0;
+    lastFaceVideoTime = -1;
+
+    faceToggleBtn.classList.remove('loading');
+    faceToggleBtn.classList.add('active');
+    faceToggleBtn.textContent = '📷 人脸操控中';
+    if (gameState !== 'GAMEOVER') {
+      facePipCard.style.display = 'block';
+    }
+    if (gameState === 'PLAYING') {
+      document.getElementById('touchControls').style.display = 'none';
+    }
+
+    faceLoop();
+  } catch (err) {
+    console.error('Face control init failed:', err);
+    disableFaceControl();
+    showFaceToast('无法启用摄像头/模型：请检查相机权限或网络连接（可继续使用触屏）');
+  } finally {
+    faceToggleBtn.disabled = false;
+  }
+}
+
+function disableFaceControl() {
+  faceModeEnabled = false;
+  if (faceLoopRaf) {
+    cancelAnimationFrame(faceLoopRaf);
+    faceLoopRaf = 0;
+  }
+  if (faceStream) {
+    faceStream.getTracks().forEach((t) => t.stop());
+    faceStream = null;
+  }
+  faceVideo.srcObject = null;
+  faceToggleBtn.classList.remove('active', 'loading');
+  faceToggleBtn.textContent = '📷 开启人脸操控';
+  facePipCard.style.display = 'none';
+  if (gameState === 'PLAYING') {
+    document.getElementById('touchControls').style.display = 'flex';
+  }
+}
+
+function faceLoop() {
+  if (!faceModeEnabled) return;
+
+  if (faceVideo.readyState >= 2 && faceVideo.currentTime !== lastFaceVideoTime && faceLandmarker) {
+    lastFaceVideoTime = faceVideo.currentTime;
+    const nowMs = performance.now();
+    const res = faceLandmarker.detectForVideo(faceVideo, nowMs);
+
+    const w = facePipCanvas.width;
+    const h = facePipCanvas.height;
+
+    // Draw mirrored front-camera feed clipped cleanly to square PiP
+    facePipCtx.save();
+    facePipCtx.translate(w, 0);
+    facePipCtx.scale(-1, 1);
+    const vw = faceVideo.videoWidth || w;
+    const vh = faceVideo.videoHeight || h;
+    const side = Math.min(vw, vh);
+    const sx = (vw - side) / 2;
+    const sy = (vh - side) / 2;
+    facePipCtx.drawImage(faceVideo, sx, sy, side, side, 0, 0, w, h);
+    facePipCtx.restore();
+
+    if (res.faceLandmarks && res.faceLandmarks.length > 0) {
+      const face = res.faceLandmarks[0];
+      const mx = (pt) => 1 - pt.x;
+      const faceCenterX = (mx(face[234]) + mx(face[454])) * 0.5;
+      const faceWidth = Math.max(0.08, Math.abs(face[454].x - face[234].x));
+      const noseX = mx(face[1]);
+      const yawRatio = (noseX - faceCenterX) / faceWidth;
+      const faceHeight = Math.max(0.08, face[152].y - face[10].y);
+      const pitchRatio = (face[1].y - face[10].y) / faceHeight;
+
+      if (!faceCalibrated) {
+        faceBaseline = { centerX: faceCenterX, yaw: yawRatio, pitchRatio };
+        faceCalibrated = true;
+      }
+
+      // Smooth absolute horizontal steering with hysteresis -> never overshoots middle track!
+      const rawSteer = (faceCenterX - faceBaseline.centerX) * 2.3 + (yawRatio - faceBaseline.yaw) * 1.15;
+      faceSmoothedSteer = faceSmoothedSteer * 0.55 + rawSteer * 0.45;
+
+      if (faceMappedLane === 0) {
+        if (faceSmoothedSteer < -0.15) faceMappedLane = -1;
+        else if (faceSmoothedSteer > 0.15) faceMappedLane = 1;
+      } else if (faceMappedLane === -1) {
+        if (faceSmoothedSteer > 0.20) faceMappedLane = 1;
+        else if (faceSmoothedSteer > -0.07) faceMappedLane = 0;
+      } else if (faceMappedLane === 1) {
+        if (faceSmoothedSteer < -0.20) faceMappedLane = -1;
+        else if (faceSmoothedSteer < 0.07) faceMappedLane = 0;
+      }
+      updateFaceLaneIndicator(faceMappedLane);
+
+      if (gameState === 'PLAYING') {
+        player.targetLane = faceMappedLane;
+      }
+
+      // Extract expressions (ASL Learner blendshapes + pitch fallback)
+      let browInnerUp = 0;
+      let browDown = 0;
+      let jawOpen = 0;
+      if (res.faceBlendshapes && res.faceBlendshapes.length > 0) {
+        const scores = {};
+        for (const c of res.faceBlendshapes[0].categories) scores[c.categoryName] = c.score;
+        browInnerUp = scores.browInnerUp || 0;
+        browDown = ((scores.browDownLeft || 0) + (scores.browDownRight || 0)) * 0.5;
+        jawOpen = scores.jawOpen || 0;
+      }
+
+      const pitchDelta = pitchRatio - faceBaseline.pitchRatio;
+      const wantJump = browInnerUp > 0.30 || jawOpen > 0.30 || pitchDelta < -0.055;
+      const wantSlide = !wantJump && (browDown > 0.28 || pitchDelta > 0.055);
+
+      if (wantJump && !prevJumpActive && nowMs - lastJumpTriggerMs > 380) {
+        lastJumpTriggerMs = nowMs;
+        if (gameState === 'PLAYING') jump();
+      } else if (wantSlide && !prevSlideActive && nowMs - lastSlideTriggerMs > 380) {
+        lastSlideTriggerMs = nowMs;
+        if (gameState === 'PLAYING') slide();
+      }
+      prevJumpActive = wantJump;
+      prevSlideActive = wantSlide;
+
+      let statusLabel = faceMappedLane === -1 ? '◀ 左道' : faceMappedLane === 1 ? '▶ 右道' : '😐 中道';
+      if (wantJump) statusLabel = '😮 跳跃!';
+      else if (wantSlide) statusLabel = '⬇ 滑铲!';
+      faceActionLabel.textContent = statusLabel;
+
+      // Draw crisp facial contour & eyebrows (highlighted gold on jump, orange on slide)
+      const scalePip = w / side;
+      const mapPt = (pt) => ({
+        x: ((1 - pt.x) * vw - sx) * scalePip,
+        y: (pt.y * vh - sy) * scalePip
+      });
+      const browColor = wantJump ? '#ffd400' : wantSlide ? '#fb923c' : '#22d3ee';
+      drawMirroredFacePath(face, FACE_OVAL_INDICES, 'rgba(34, 211, 238, 0.45)', 2, mapPt, [4, 4]);
+      drawMirroredFacePath(face, LEFT_EYEBROW, browColor, wantJump ? 4 : 2.5, mapPt);
+      drawMirroredFacePath(face, RIGHT_EYEBROW, browColor, wantJump ? 4 : 2.5, mapPt);
+
+      const nosePip = mapPt(face[1]);
+      facePipCtx.fillStyle = browColor;
+      facePipCtx.beginPath();
+      facePipCtx.arc(nosePip.x, nosePip.y, 4.5, 0, Math.PI * 2);
+      facePipCtx.fill();
+    } else {
+      faceActionLabel.textContent = '👀 找人脸';
+    }
+  }
+
+  faceLoopRaf = requestAnimationFrame(faceLoop);
+}
+
+faceToggleBtn.addEventListener('click', () => {
+  if (faceModeEnabled) disableFaceControl();
+  else enableFaceControl();
+});
+
+faceCalibrateBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  faceCalibrated = false;
+  faceSmoothedSteer = 0;
+  faceActionLabel.textContent = '🎯 已校准';
+});
 
 // Master Loop with Strict Clamp
 function gameLoop(timestamp) {

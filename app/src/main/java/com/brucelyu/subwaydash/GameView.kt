@@ -6,6 +6,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.*
 
 class GameView @JvmOverloads constructor(
@@ -31,6 +32,11 @@ class GameView @JvmOverloads constructor(
 
     // Callback when game ends: (score, coins, speedMultiplier)
     var onGameOverListener: ((score: Int, coins: Int, speedMultiplier: Float) -> Unit)? = null
+    var onGameStateChangedListener: ((GameState) -> Unit)? = null
+
+    @Volatile
+    var isFaceControlEnabled: Boolean = false
+    private val pendingActions = ConcurrentLinkedQueue<() -> Unit>()
 
     // Progressive Acceleration System
     // Starts comfortably at 5.2f, scales progressively up to 16.5f!
@@ -170,6 +176,8 @@ class GameView @JvmOverloads constructor(
         spawnWaveAt(450f)
         spawnWaveAt(850f)
         nextSpawnZ = 1250f
+        pendingActions.clear()
+        post { onGameStateChangedListener?.invoke(GameState.PLAYING) }
     }
 
     private fun gameOver() {
@@ -181,7 +189,28 @@ class GameView @JvmOverloads constructor(
         }
         val multiplier = currentSpeed / baseSpeed
         post {
+            onGameStateChangedListener?.invoke(GameState.GAMEOVER)
             onGameOverListener?.invoke(score, coinsCollected, multiplier)
+        }
+    }
+
+    fun setTargetLaneFromFace(lane: Int) {
+        pendingActions.add {
+            if (state == GameState.PLAYING) {
+                playerTargetLane = lane.coerceIn(-1, 1)
+            }
+        }
+    }
+
+    fun triggerJump() {
+        pendingActions.add {
+            if (state == GameState.PLAYING) jump()
+        }
+    }
+
+    fun triggerSlide() {
+        pendingActions.add {
+            if (state == GameState.PLAYING) slide()
         }
     }
 
@@ -228,26 +257,28 @@ class GameView @JvmOverloads constructor(
                     return true
                 }
 
-                if (btnLeftRect.contains(x, y)) {
-                    activeBtn = "LEFT"
-                    moveLeft()
-                    hasSwipedInGesture = true
-                    return true
-                } else if (btnJumpRect.contains(x, y)) {
-                    activeBtn = "JUMP"
-                    jump()
-                    hasSwipedInGesture = true
-                    return true
-                } else if (btnSlideRect.contains(x, y)) {
-                    activeBtn = "SLIDE"
-                    slide()
-                    hasSwipedInGesture = true
-                    return true
-                } else if (btnRightRect.contains(x, y)) {
-                    activeBtn = "RIGHT"
-                    moveRight()
-                    hasSwipedInGesture = true
-                    return true
+                if (!isFaceControlEnabled) {
+                    if (btnLeftRect.contains(x, y)) {
+                        activeBtn = "LEFT"
+                        moveLeft()
+                        hasSwipedInGesture = true
+                        return true
+                    } else if (btnJumpRect.contains(x, y)) {
+                        activeBtn = "JUMP"
+                        jump()
+                        hasSwipedInGesture = true
+                        return true
+                    } else if (btnSlideRect.contains(x, y)) {
+                        activeBtn = "SLIDE"
+                        slide()
+                        hasSwipedInGesture = true
+                        return true
+                    } else if (btnRightRect.contains(x, y)) {
+                        activeBtn = "RIGHT"
+                        moveRight()
+                        hasSwipedInGesture = true
+                        return true
+                    }
                 }
             }
 
@@ -317,6 +348,11 @@ class GameView @JvmOverloads constructor(
 
     private fun update(dtScale: Float) {
         if (state != GameState.PLAYING) return
+
+        while (true) {
+            val action = pendingActions.poll() ?: break
+            action()
+        }
 
         // Progressive Speed Curve: scales smoothly with distance up to 16.5f!
         val safeDistance = distance.coerceAtLeast(0f)
@@ -633,8 +669,8 @@ class GameView @JvmOverloads constructor(
             canvas.drawRect(0f, screenHeight - 30f, screenWidth, screenHeight, paint)
         }
 
-        // 8. Draw Virtual Touch Buttons (During active gameplay)
-        if (state == GameState.PLAYING) {
+        // 8. Draw Virtual Touch Buttons (During active gameplay when in Touch mode)
+        if (state == GameState.PLAYING && !isFaceControlEnabled) {
             drawTouchControls(canvas)
         }
 
@@ -928,7 +964,12 @@ class GameView @JvmOverloads constructor(
 
         textPaint.color = Color.rgb(148, 163, 184)
         textPaint.textSize = screenHeight * 0.019f
-        canvas.drawText("📱 触屏: 屏幕任意位置滑动 或 点击底部4大按键", screenWidth / 2f, screenHeight * 0.70f, textPaint)
+        val guideText = if (isFaceControlEnabled) {
+            "📷 人脸体感: 左右转头变道 · 抬头/张嘴跳跃 · 低头滑铲"
+        } else {
+            "📱 触屏: 屏幕任意位置滑动 或 点击底部4大按键"
+        }
+        canvas.drawText(guideText, screenWidth / 2f, screenHeight * 0.70f, textPaint)
     }
 
     private fun drawGameOverScreen(canvas: Canvas, unscaledSpeed: Float) {
